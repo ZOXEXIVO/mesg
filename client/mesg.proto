@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package grpc;
+
+service MesgService {
+  rpc Push (PushRequest) returns (PushResponse) {}
+  rpc Pull (PullRequest) returns (stream PullResponse) {}
+  rpc Commit (CommitRequest) returns (CommitResponse) {}
+}
+
+// Push
+message PushRequest {
+  string queue = 1;
+  bytes data = 2;
+  int32 len = 3;
+}
+
+message PushResponse {
+  bool ack = 1;
+}
+
+// Pull
+
+message PullRequest {
+  string queue = 1;
+}
+
+message PullResponse {
+  string messageId = 1;
+  bytes data = 2;
+  int32 len = 3;
+}
+
+// Commit 
+
+message CommitRequest {
+  string queue = 1;
+  string messageId = 2;
+}
+
+message CommitResponse {}
