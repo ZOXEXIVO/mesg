@@ -11,12 +11,12 @@ use tonic::Request;
 
 use crate::metrics::MetricsWriter;
 
-pub struct InternalService {
+pub struct MesgInternalService {
     storage: Storage,
     metrics: MetricsWriter,
 }
 
-impl InternalService {
+impl MesgInternalService {
     pub fn new(options: &MesgServerOptions, metrics_writer: MetricsWriter) -> Self {
         Self {
             storage: Storage::new(&options.db_path, metrics_writer.clone()),
@@ -26,7 +26,7 @@ impl InternalService {
 }
 
 #[tonic::async_trait]
-impl MesgService for InternalService {
+impl MesgService for MesgInternalService {
     async fn push(
         &self,
         request: Request<PushRequest>,
