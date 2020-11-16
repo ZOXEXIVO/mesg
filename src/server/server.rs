@@ -9,7 +9,6 @@ use crate::server::service::InternalService;
 
 pub struct MesgServerOptions {
     pub db_path: String,
-
     pub port: u16,
 }
 

@@ -16,7 +16,7 @@ timer = "0.2.0"
 chrono = "0.4.19"
 crossbeam-channel = "0.5.0"
 dashmap = "3.11.10"
-log = { version = "0.4.11", features = ["release_max_level_off"] }
+log = { version = "0.4.11", features = ["release_max_level_info"] }
 env_logger = "0.8.1"
 clap = "2.33.3"
 
