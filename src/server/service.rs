@@ -7,7 +7,9 @@ use crate::storage::{Storage, StorageReader};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::Stream;
-use tonic::Request;
+use tonic::{IntoRequest, Request};
+
+use log::info;
 
 use crate::metrics::MetricsWriter;
 
@@ -33,9 +35,13 @@ impl MesgService for MesgInternalService {
     ) -> std::result::Result<tonic::Response<PushResponse>, tonic::Status> {
         let message = request.into_inner();
 
-        self.storage.push(message.queue, &message.data[..]).await;
+        self.storage.push(message.queue.clone(), message.data).await;
+
+        info!("pushed");
 
         self.metrics.inc_push_operation();
+
+        info!("inc");
 
         Ok(tonic::Response::new(PushResponse { ack: true }))
     }
@@ -49,8 +55,8 @@ impl MesgService for MesgInternalService {
         let req = request.into_inner();
 
         let pull_stream = PullResponseStream {
-            topic: req.queue.clone(),
-            reader: self.storage.pull(req.queue).await,
+            queue: req.queue.clone(),
+            reader: self.storage.get_reader(req.queue).await,
         };
 
         self.metrics.inc_pull_operation();
@@ -73,16 +79,32 @@ impl MesgService for MesgInternalService {
 }
 
 pub struct PullResponseStream {
-    topic: String,
-    reader: StorageReader,
+    queue: String,
+    pub reader: StorageReader,
 }
 
 impl Stream for PullResponseStream {
     type Item = std::result::Result<PullResponse, tonic::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let topic = &self.topic;
+        tokio::spawn(|| {
+            
+        });
+        
+        let message = &self
+            .reader
+            .receiver
+            .recv()
+            .unwrap()
+            .into_request()
+            .into_inner();
 
-        Poll::Ready(None)
+        let response = PullResponse {
+            message_id: message.id.to_string(),
+            len: message.data.len() as i32,
+            data: message.data.to_vec(),
+        };
+
+        Poll::Ready(Some(Ok(response)))
     }
 }
