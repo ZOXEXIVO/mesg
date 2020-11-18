@@ -69,15 +69,10 @@ impl Storage {
         
         match hash_map.get_mut(&queue_name) {
             Some(mut item) => {
-                info!("use existing storage for queue: {}", queue_name);
-                                
-                item.data.push_back(Message::clone(&message));
-                
+                item.data.push_back(Message::clone(&message));                
                 item.sender.send(message);
             },
             None => {
-                info!("create new storage for queue: {}", queue_name);
-                
                 let (sender, receiver) = crossbeam_channel::unbounded();
                 
                 let mut storage = MessageStorage{

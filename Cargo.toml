@@ -20,6 +20,7 @@ log = { version = "0.4.11", features = ["release_max_level_info"] }
 env_logger = "0.8.1"
 clap = "2.33.3"
 bytes = "0.6.0"
+oneshot = "0.1.2"
 
 [build-dependencies]
 tonic-build = "0.3.1"

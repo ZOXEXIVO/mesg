@@ -37,11 +37,7 @@ impl MesgService for MesgInternalService {
 
         self.storage.push(message.queue.clone(), message.data).await;
 
-        info!("pushed");
-
-        self.metrics.inc_push_operation();
-
-        info!("inc");
+        //self.metrics.inc_push_operation();
 
         Ok(tonic::Response::new(PushResponse { ack: true }))
     }
@@ -59,7 +55,7 @@ impl MesgService for MesgInternalService {
             reader: self.storage.get_reader(req.queue).await,
         };
 
-        self.metrics.inc_pull_operation();
+        //self.metrics.inc_pull_operation();
 
         Ok(tonic::Response::new(pull_stream))
     }
@@ -72,7 +68,7 @@ impl MesgService for MesgInternalService {
 
         self.storage.commit(req.queue, req.message_id).await;
 
-        self.metrics.inc_commit_operation();
+        //self.metrics.inc_commit_operation();
 
         Ok(tonic::Response::new(CommitResponse {}))
     }
@@ -87,10 +83,8 @@ impl Stream for PullResponseStream {
     type Item = std::result::Result<PullResponse, tonic::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        tokio::spawn(|| {
-            
-        });
-        
+        info!("poll_next");
+
         let message = &self
             .reader
             .receiver
@@ -106,5 +100,11 @@ impl Stream for PullResponseStream {
         };
 
         Poll::Ready(Some(Ok(response)))
+    }
+}
+
+impl Drop for PullResponseStream {
+    fn drop(&mut self) {
+        println!("dropped");
     }
 }
