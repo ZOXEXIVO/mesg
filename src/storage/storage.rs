@@ -1,27 +1,28 @@
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 
 use crate::metrics::MetricsWriter;
-use crate::storage::{FileWrapper};
+use crate::storage::{StorageReader};
 use std::sync::{Arc, Mutex};
 use crate::storage::utils::StorageIdGenerator;
-use dashmap::DashMap;
 use std::collections::{VecDeque, HashMap};
 use crossbeam_channel::{Receiver, Sender};
 
 use log::{info};
-use tokio::sync::RwLock;
 use bytes::Bytes;
+use crate::storage::notifier::{DataNotifiers, DataNotifier};
 
 pub struct Message{
     pub id: u64,
-    pub data: Bytes
+    pub data: Bytes,
+    pub delivered: bool
 }
 
 impl Message{
     pub fn new(id: u64, data: Vec<u8>) -> Self {
         Message {
             id,
-            data: Bytes::copy_from_slice(&data)
+            data: Bytes::copy_from_slice(&data),
+            delivered: false
         }
     }
 }
@@ -30,60 +31,73 @@ impl Clone for Message {
     fn clone(&self) -> Self {
         Message {
             id: self.id,
-            data: Bytes::clone(&self.data)
+            data: Bytes::clone(&self.data),
+            delivered: self.delivered
         }
     }
 }
 
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
-    pub sender: Sender<Message>,
-    pub receiver: Receiver<Message>
+    pub data_notifiers: DataNotifiers
+}
+
+impl MessageStorage {
+    pub fn new() -> Self {
+        MessageStorage {
+            data: VecDeque::new(),
+            data_notifiers: DataNotifiers::new()
+        }
+    }
+    
+    pub fn push(&mut self, message: Message) {
+        self.data.push_back(Message::clone(&message));
+        self.data_notifiers.send(message);
+    }
+
+    pub fn create_reader(&mut self) -> Receiver<Message> {
+        let (sender, reciever) = crossbeam_channel::unbounded();
+        
+        let notifier = DataNotifier::new(sender, reciever.clone());
+        
+        self.data_notifiers.notifiers.push(notifier);
+
+        reciever
+    }
 }
 
 pub struct Storage {
     metrics_writer: MetricsWriter,
- 
-    id_generator: StorageIdGenerator,
-    
     store: Arc<Mutex<HashMap<String, MessageStorage>>>
 }
 
 impl Storage {
-    pub fn new<P: AsRef<Path>>(db_path: P, metrics_writer: MetricsWriter) -> Self {
-        Storage {
-            id_generator: StorageIdGenerator::new(),
+    pub fn new(metrics_writer: MetricsWriter) -> Self {
+        Storage {            
             metrics_writer,
             store: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 
     pub async fn push(&self, queue_name: String, data: Vec<u8>) {
-        let message_id = self.id_generator.generate();
+        let message_id = StorageIdGenerator::generate();
         
         info!("message: id: {} pushed", message_id);
         
         let message = Message::new(message_id, data);
 
-        let mut hash_map = self.store.lock().unwrap();
+        let mut store_map = self.store.lock().unwrap();
         
-        match hash_map.get_mut(&queue_name) {
-            Some(mut item) => {
-                item.data.push_back(Message::clone(&message));                
-                item.sender.send(message);
+        match store_map.get_mut(&queue_name) {
+            Some(item) => {
+                item.push(message);
             },
             None => {
-                let (sender, receiver) = crossbeam_channel::unbounded();
-                
-                let mut storage = MessageStorage{
-                    data: VecDeque::new(),
-                    sender,
-                    receiver
-                };
+                let mut storage = MessageStorage::new();
  
-                storage.data.push_back(message);
+                storage.push(message);
 
-                hash_map.insert(queue_name,storage);
+                store_map.insert(queue_name, storage);
             }
         };
     }
@@ -91,19 +105,24 @@ impl Storage {
     pub async fn get_reader(&self, queue_name: String) -> StorageReader {
         info!("consumer connected: queue_name: {}", &queue_name);
 
-        let mut hash_map = self.store.lock().unwrap();
+        let mut store_lock = self.store.lock().unwrap();
         
-        return match hash_map.get_mut(&queue_name) {
-            Some(mut item) => {
+        return match store_lock.get_mut(&queue_name) {
+            Some(item) => {
                 StorageReader {
-                    receiver: item.receiver.clone()
+                    receiver: item.create_reader()
                 }                
             },
             None => {
-                let (sender, receiver) = crossbeam_channel::unbounded();
-                StorageReader {
-                    receiver: receiver.clone()
-                }
+                let mut storage = MessageStorage::new();
+
+                let reader = StorageReader {
+                    receiver: storage.create_reader()
+                };
+                
+                store_lock.insert(queue_name, storage);
+
+                reader
             }
         };     
     }
@@ -116,13 +135,4 @@ impl Storage {
     pub async fn commit(&self, queue_name: String, message_id: String) {
 
     }
-}
-
-pub struct StorageItem{
-    pub id: String,
-    pub data: Vec<u8>
-}
-
-pub struct StorageReader {
-    pub receiver: Receiver<Message>
 }

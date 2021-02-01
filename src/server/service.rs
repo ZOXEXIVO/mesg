@@ -1,17 +1,14 @@
-use crate::server::grpc::mesg_service_server::MesgService;
-use crate::server::grpc::{
-    CommitRequest, CommitResponse, PullRequest, PullResponse, PushRequest, PushResponse,
-};
 use crate::server::server::MesgServerOptions;
 use crate::storage::{Storage, StorageReader};
+use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::Stream;
-use tonic::{IntoRequest, Request};
-
-use log::info;
+use tonic::{Request};
 
 use crate::metrics::MetricsWriter;
+use crate::server::network::grpc::{PushRequest, PushResponse, PullRequest, CommitRequest, CommitResponse, PullResponse};
+use crate::server::network::grpc::mesg_service_server::MesgService;
 
 pub struct MesgInternalService {
     storage: Storage,
@@ -19,9 +16,9 @@ pub struct MesgInternalService {
 }
 
 impl MesgInternalService {
-    pub fn new(options: &MesgServerOptions, metrics_writer: MetricsWriter) -> Self {
+    pub fn new(options: MesgServerOptions, metrics_writer: MetricsWriter) -> Self {
         Self {
-            storage: Storage::new(&options.db_path, metrics_writer.clone()),
+            storage: Storage::new(metrics_writer.clone()),
             metrics: metrics_writer,
         }
     }
@@ -85,21 +82,38 @@ impl Stream for PullResponseStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         info!("poll_next");
 
-        let message = &self
-            .reader
-            .receiver
-            .recv()
-            .unwrap()
-            .into_request()
-            .into_inner();
+        match self.reader.receiver.try_recv() {
+            Ok(message) => {
+                let response = PullResponse {
+                    message_id: message.id.to_string(),
+                    len: message.data.len() as i32,
+                    data: message.data.to_vec(),
+                };
 
-        let response = PullResponse {
-            message_id: message.id.to_string(),
-            len: message.data.len() as i32,
-            data: message.data.to_vec(),
-        };
+                Poll::Ready(Some(Ok(response)))
+            }
+            Err(err) => {
+                let reader = self.reader.clone();
+                let waker = cx.waker().clone();
 
-        Poll::Ready(Some(Ok(response)))
+                // tokio::spawn(|| {
+                //     info!("check reciever");
+                //
+                //     match reader.receiver.try_recv() {
+                //         Ok(message) => {
+                //             info!("recieved has message");
+                //             waker.wake();
+                //         }
+                //         Err(err) => {
+                //             info!("wait 1s");
+                //             //delay_for(Duration::from_secs(1)).await;
+                //         }
+                //     }
+                // });
+
+                Poll::Pending
+            }
+        }
     }
 }
 

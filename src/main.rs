@@ -6,21 +6,21 @@ mod server;
 mod storage;
 mod utils;
 
-use crate::server::server::{MesgServer, MesgServerOptions};
 use crate::metrics::MetricsServer;
 use env_logger::Env;
 
 use clap::{App, Arg};
+use crate::server::server::{MesgServerOptions, MesgServer};
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     init_logger();
 
     let mut server = MesgServer::new(
-        get_options(), MetricsServer::start(),
+        MetricsServer::start()
     );
 
-    server.run().await?;
+    server.run(get_options()).await?;
 
     Ok(())
 }

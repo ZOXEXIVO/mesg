@@ -2,7 +2,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
          .build_server(true)
          .build_client(false)
-         .out_dir("src/server")
+         .out_dir("src/server/network")
          .compile(
              &["client/mesg.proto"],
              &["client"]

@@ -1,4 +1,5 @@
-mod grpc;
+mod network;
 
 pub mod server;
-pub mod service;
+mod service;
+

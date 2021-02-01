@@ -2,9 +2,9 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushRequest {
     #[prost(string, tag = "1")]
-    pub queue: std::string::String,
-    #[prost(bytes, tag = "2")]
-    pub data: std::vec::Vec<u8>,
+    pub queue: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
     #[prost(int32, tag = "3")]
     pub len: i32,
 }
@@ -18,14 +18,14 @@ pub struct PushResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag = "1")]
-    pub queue: std::string::String,
+    pub queue: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
     #[prost(string, tag = "1")]
-    pub message_id: std::string::String,
-    #[prost(bytes, tag = "2")]
-    pub data: std::vec::Vec<u8>,
+    pub message_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
     #[prost(int32, tag = "3")]
     pub len: i32,
 }
@@ -34,9 +34,9 @@ pub struct PullResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
     #[prost(string, tag = "1")]
-    pub queue: std::string::String,
+    pub queue: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub message_id: std::string::String,
+    pub message_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {}
@@ -196,6 +196,7 @@ pub mod mesg_service_server {
                     Ok(http::Response::builder()
                         .status(200)
                         .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
                         .body(tonic::body::BoxBody::empty())
                         .unwrap())
                 }),
