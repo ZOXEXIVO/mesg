@@ -5,7 +5,7 @@ use crate::storage::{StorageReader};
 use std::sync::{Arc, Mutex};
 use crate::storage::utils::StorageIdGenerator;
 use std::collections::{VecDeque, HashMap};
-use crossbeam_channel::{Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 
 use log::{info};
 use bytes::Bytes;
@@ -55,10 +55,10 @@ impl MessageStorage {
         self.data_notifiers.send(message);
     }
 
-    pub fn create_reader(&mut self) -> Receiver<Message> {
-        let (sender, reciever) = crossbeam_channel::unbounded();
-        
-        let notifier = DataNotifier::new(sender, reciever.clone());
+    pub fn create_reader(&mut self) -> UnboundedReceiver<Message> {
+        let (sender, reciever) = tokio::sync::mpsc::unbounded_channel();
+
+        let notifier = DataNotifier::new(sender);
         
         self.data_notifiers.notifiers.push(notifier);
 
@@ -102,7 +102,7 @@ impl Storage {
         };
     }
 
-    pub async fn get_reader(&self, queue_name: String) -> StorageReader {
+    pub fn get_reader(&self, queue_name: String) -> StorageReader {
         info!("consumer connected: queue_name: {}", &queue_name);
 
         let mut store_lock = self.store.lock().unwrap();

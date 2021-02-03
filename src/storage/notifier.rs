@@ -1,6 +1,6 @@
 ﻿use crate::storage::Message;
-use crossbeam_channel::{Sender, Receiver};
 use std::cell::Cell;
+use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 
 pub struct DataNotifiers {
     pub notifiers: Vec<DataNotifier>,
@@ -33,23 +33,36 @@ impl DataNotifiers {
 }
 
 pub struct DataNotifier {
-    sender: Sender<Message>,
-    receiver: Receiver<Message>
+    sender: UnboundedSender<Message>
 }
 
 impl DataNotifier {
-    pub fn new(sender: Sender<Message>,  receiver: Receiver<Message>) -> Self {
+    pub fn new(sender: UnboundedSender<Message>) -> Self {
         DataNotifier {
-            sender,
-            receiver
+            sender
         }
     }
     
-    pub fn send(&self, message: Message) {
-        self.sender.send(message).unwrap();
+    pub fn send(&self, message: Message) -> Result<SendResult, SendError> {
+        match self.sender.send(message) {
+            Ok(res) => {
+                Ok(SendResult{
+                    
+                })
+            },
+            Err(error) =>  {
+                Err(SendError{
+                    
+                })
+            }
+        }
     }
+}
+
+pub struct SendResult {
+
+}
+
+pub struct SendError {
     
-    pub fn get_reciever(&self) -> &Receiver<Message> {
-        &self.receiver
-    }
 }
