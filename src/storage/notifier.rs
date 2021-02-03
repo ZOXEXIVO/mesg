@@ -16,13 +16,13 @@ impl DataNotifiers {
     }
     
     pub fn send(&self, message: Message) {
-        if self.notifiers.len() == 0 {
+        if self.notifiers.is_empty() {
             return;
         }
 
         let mut current_idx = self.last_notifier_idx.get() + 1;
 
-        current_idx = current_idx % (self.notifiers.len() as u32);
+        current_idx %= self.notifiers.len() as u32;
         
         self.last_notifier_idx.set(current_idx);
         
