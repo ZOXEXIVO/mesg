@@ -1,15 +1,15 @@
 ﻿use crate::storage::Message;
 use std::cell::Cell;
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver};
+use tokio::sync::mpsc::{UnboundedSender};
 
-pub struct DataNotifiers {
-    pub notifiers: Vec<DataNotifier>,
+pub struct DataSubscribers {
+    pub notifiers: Vec<DataSubscriber>,
     pub last_notifier_idx: Cell<u32>
 }
 
-impl DataNotifiers {
+impl DataSubscribers {
     pub fn new() -> Self {
-        DataNotifiers {
+        DataSubscribers {
             notifiers: Vec::new(),
             last_notifier_idx: Cell::new(0)
         }
@@ -32,13 +32,13 @@ impl DataNotifiers {
     }
 }
 
-pub struct DataNotifier {
+pub struct DataSubscriber {
     sender: UnboundedSender<Message>
 }
 
-impl DataNotifier {
+impl DataSubscriber {
     pub fn new(sender: UnboundedSender<Message>) -> Self {
-        DataNotifier {
+        DataSubscriber {
             sender
         }
     }

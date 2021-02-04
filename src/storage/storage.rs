@@ -1,20 +1,40 @@
-use std::path::{Path};
-
 use crate::metrics::MetricsWriter;
 use crate::storage::{StorageReader};
 use std::sync::{Arc, Mutex};
 use crate::storage::utils::StorageIdGenerator;
 use std::collections::{VecDeque, HashMap};
-use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
+use tokio::sync::mpsc::{UnboundedReceiver};
 
-use log::{info};
+use log::{info, warn};
 use bytes::Bytes;
-use crate::storage::notifier::{DataNotifiers, DataNotifier};
+use crate::storage::notifier::{DataSubscribers, DataSubscriber};
+use prost::alloc::collections::{BTreeMap};
+use std::cmp::Ordering;
 
 pub struct Message{
     pub id: u64,
     pub data: Bytes,
     pub delivered: bool
+}
+
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
+}
+
+impl Eq for Message {}
+
+impl PartialOrd<Message> for Message {
+    fn partial_cmp(&self, other: &Message) -> Option<Ordering> {
+        self.id.partial_cmp(&other.id)
+    }
 }
 
 impl Message{
@@ -39,28 +59,30 @@ impl Clone for Message {
 
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
-    pub data_notifiers: DataNotifiers
+    pub unacked: BTreeMap<String, Message>,
+    pub subscribers: DataSubscribers
 }
 
 impl MessageStorage {
     pub fn new() -> Self {
         MessageStorage {
             data: VecDeque::new(),
-            data_notifiers: DataNotifiers::new()
+            unacked: BTreeMap::new(),
+            subscribers: DataSubscribers::new()
         }
     }
     
     pub fn push(&mut self, message: Message) {
         self.data.push_back(Message::clone(&message));
-        self.data_notifiers.send(message);
+        self.subscribers.send(message);
     }
 
     pub fn create_reader(&mut self) -> UnboundedReceiver<Message> {
         let (sender, reciever) = tokio::sync::mpsc::unbounded_channel();
 
-        let notifier = DataNotifier::new(sender);
+        let notifier = DataSubscriber::new(sender);
         
-        self.data_notifiers.notifiers.push(notifier);
+        self.subscribers.notifiers.push(notifier);
 
         reciever
     }
@@ -126,13 +148,19 @@ impl Storage {
             }
         };     
     }
-    
-    async fn add_to_wait_list(&mut self, queue_name: String){
-        
- 
-    }
 
     pub async fn commit(&self, queue_name: String, message_id: String) {
-
+        let mut store_map = self.store.lock().unwrap();
+        
+        match store_map.get_mut(&queue_name) {
+            Some(message_storage) => {
+                if let Some(item) = message_storage.unacked.remove_entry(&message_id) {
+                    info!("commited: queue_name={}, message_id={}", &queue_name, &message_id);
+                }
+            },
+            None => {
+                warn!("commit failed: queue_name={}, message_id={}", &queue_name, &message_id);
+            }
+        };
     }
 }
