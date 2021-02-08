@@ -4,7 +4,6 @@ mod cluster;
 mod metrics;
 mod server;
 mod storage;
-mod utils;
 
 use crate::metrics::MetricsServer;
 use env_logger::Env;

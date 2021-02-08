@@ -1,6 +1,5 @@
-use std::thread;
 use std::time::Duration;
-use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 pub struct MetricsServer;
 
@@ -63,26 +62,26 @@ impl MetricsWriter {
     }
 
     pub fn inc_push_operation(&self) {
-        self.write("push", 1)
+        //self.write("push", 1)
     }
 
     pub fn inc_pull_operation(&self) {
-        self.write("pull", 1)
+        //self.write("pull", 1)
     }
 
     pub fn inc_commit_operation(&self) {
-        self.write("commit", 1)
+        //self.write("commit", 1)
     }
     
     fn write(&self, name: &str, value: i32) {
-        let metric = MetricItem {  name: String::from(name), value };
-
-        match self.metrics_channel.send(metric) {
-            Ok(()) => {}
-            Err(e) => {
-                //error!(self.logger, "error while send metric {}", e);
-            }
-        }
+        // let metric = MetricItem {  name: String::from(name), value };
+        // 
+        // match self.metrics_channel.send(metric) {
+        //     Ok(()) => {}
+        //     Err(e) => {
+        //         //error!(self.logger, "error while send metric {}", e);
+        //     }
+        // }
     }
 }
 

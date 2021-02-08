@@ -4,8 +4,8 @@ use tonic::transport::Server;
 use crate::cluster::cluster::Cluster;
 use log::info;
 
-use crate::server::service::MesgInternalService;
 use crate::server::network::grpc::mesg_service_server::MesgServiceServer;
+use crate::server::network::service::MesgInternalService;
 
 pub struct MesgServerOptions {
     pub db_path: String,
@@ -17,7 +17,7 @@ pub struct MesgServer {
 
     cluster: Cluster,
 
-    metrics: MetricsWriter
+    metrics: MetricsWriter,
 }
 
 impl MesgServer {
@@ -25,13 +25,13 @@ impl MesgServer {
         MesgServer {
             cluster: Cluster::new(),
             service: None,
-            metrics: metrics_writer
+            metrics: metrics_writer,
         }
     }
 
-    pub async fn run(&mut self, options: MesgServerOptions) -> std::result::Result<(), std::io::Error> {        
+    pub async fn run(&mut self, options: MesgServerOptions) -> std::result::Result<(), std::io::Error> {
         let service_port = options.port;
-        
+
         let service = MesgServiceServer::new(MesgInternalService::new(
             options,
             self.metrics.clone(),
