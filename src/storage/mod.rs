@@ -6,5 +6,5 @@ mod notifier;
 
 pub use storage::*;
 pub use file::*;
-use utils::*;
+pub use utils::*;
 pub use reader::*;
