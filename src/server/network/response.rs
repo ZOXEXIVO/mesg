@@ -3,7 +3,7 @@ use crate::storage::StorageReader;
 use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::codegen::Stream;
+use tonic::codegen::futures_core::Stream;
 
 pub struct PullResponseStream {
     pub reader: StorageReader,
@@ -14,6 +14,8 @@ impl Stream for PullResponseStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         info!("poll_next");
+
+        let storage = self.reader.queue_storages.lock();
 
         match Pin::new(self).reader.receiver.poll_recv(cx) {
             Poll::Ready(item_option) => {

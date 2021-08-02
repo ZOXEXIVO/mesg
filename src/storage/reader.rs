@@ -1,14 +1,10 @@
-﻿use crate::storage::Message;
-use tokio::sync::mpsc::UnboundedReceiver;
+﻿use crate::storage::{MessageStorage};
+use std::collections::HashMap;
+use std::sync::{Arc};
+use parking_lot::{Condvar, Mutex};
 
 pub struct StorageReader {
-    pub receiver: UnboundedReceiver<Message>
+    pub queue_name: String,
+    pub queue_storages: Arc<Mutex<HashMap<String, MessageStorage>>>,
+    pub condvar: Arc<Condvar>
 }
-
-// impl Clone for StorageReader {
-//     fn clone(&self) -> Self {
-//         StorageReader {
-//             receiver: self.receiver.clone()
-//         }
-//     }
-// }

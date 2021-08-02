@@ -2,15 +2,14 @@ use crate::metrics::MetricsWriter;
 use crate::storage::{StorageReader};
 use crate::storage::utils::StorageIdGenerator;
 use std::collections::{VecDeque, HashMap};
-use tokio::sync::mpsc::{UnboundedReceiver};
 
 use log::{info, warn};
 use bytes::Bytes;
-use crate::storage::notifier::{DataSubscribers, DataSubscriber};
 use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::thread::JoinHandle;
-use parking_lot::{Mutex};
+use parking_lot::{Mutex, Condvar};
+use std::sync::Arc;
 
 pub struct Message{
     pub id: u64,
@@ -60,14 +59,16 @@ impl Clone for Message {
 
 pub struct Storage {
     metrics_writer: MetricsWriter,
-    queue_storages: Mutex<HashMap<String, MessageStorage>>
+    queue_storages: Arc<Mutex<HashMap<String, MessageStorage>>>,
+    condvar: Arc<Condvar>
 }
 
 impl Storage {
     pub fn new(metrics_writer: MetricsWriter) -> Self {
         Storage {            
             metrics_writer,
-            queue_storages: Mutex::new(HashMap::new())
+            queue_storages: Arc::new(Mutex::new(HashMap::new())),
+            condvar: Arc::new(Condvar::new())
         }
     }
 
@@ -99,24 +100,11 @@ impl Storage {
 
         let mut store_lock = self.queue_storages.lock();
         
-        return match store_lock.get_mut(&queue_name) {
-            Some(item) => {
-                StorageReader {
-                    receiver: item.create_reader()
-                }                
-            },
-            None => {
-                let mut storage = MessageStorage::new();
-
-                let reader = StorageReader {
-                    receiver: storage.create_reader()
-                };
-                
-                store_lock.insert(queue_name, storage);
-
-                reader
-            }
-        };     
+        StorageReader {
+            queue_name: queue_name.clone(),
+            queue_storages: Arc::clone(&self.queue_storages),
+            condvar: Arc::clone(&self.condvar)
+        }
     }
 
     pub async fn commit(&self, queue_name: String, message_id: String) {
@@ -138,7 +126,6 @@ impl Storage {
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
     pub unacked: BTreeMap<String, Message>,
-    pub subscribers: DataSubscribers,
     pub worker_thread: Option<JoinHandle<()>>
 }
 
@@ -147,23 +134,15 @@ impl MessageStorage {
         MessageStorage {
             data: VecDeque::new(),
             unacked: BTreeMap::new(),
-            subscribers: DataSubscribers::new(),
             worker_thread: None
         }
     }
 
     pub fn push(&mut self, message: Message) {
         self.data.push_back(Message::clone(&message));
-        self.subscribers.send(message);
     }
+}
 
-    pub fn create_reader(&mut self) -> UnboundedReceiver<Message> {
-        let (sender, reciever) = tokio::sync::mpsc::unbounded_channel();
-
-        let notifier = DataSubscriber::new(sender);
-
-        self.subscribers.notifiers.push(notifier);
-
-        reciever
-    }
+pub struct MessageReader{
+    
 }
