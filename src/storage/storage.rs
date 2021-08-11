@@ -1,15 +1,16 @@
 use crate::metrics::MetricsWriter;
 use crate::storage::{StorageReader};
 use crate::storage::utils::StorageIdGenerator;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque};
 
 use log::{info, warn};
 use bytes::Bytes;
 use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::thread::JoinHandle;
-use parking_lot::{Mutex, Condvar};
+use parking_lot::{Condvar};
 use std::sync::Arc;
+use chashmap::CHashMap;
 
 pub struct Message{
     pub id: u64,
@@ -59,7 +60,7 @@ impl Clone for Message {
 
 pub struct Storage {
     metrics_writer: MetricsWriter,
-    queue_storages: Arc<Mutex<HashMap<String, MessageStorage>>>,
+    storage: Arc<CHashMap<String, MessageStorage>>,
     condvar: Arc<Condvar>
 }
 
@@ -67,7 +68,7 @@ impl Storage {
     pub fn new(metrics_writer: MetricsWriter) -> Self {
         Storage {            
             metrics_writer,
-            queue_storages: Arc::new(Mutex::new(HashMap::new())),
+            storage: Arc::new(CHashMap::new()),
             condvar: Arc::new(Condvar::new())
         }
     }
@@ -76,13 +77,11 @@ impl Storage {
         let message_id = StorageIdGenerator::generate();
         
         info!("message: id: {} pushed", message_id);
-        
+               
         let message = Message::new(message_id, data);
-
-        let mut locked_storage = self.queue_storages.lock();
-        
-        match locked_storage.get_mut(&queue_name) {
-            Some(item) => {
+              
+        match self.storage.get_mut(&queue_name) {
+            Some(mut item) => {
                 item.push(message);
             },
             None => {
@@ -90,7 +89,7 @@ impl Storage {
  
                 storage.push(message);
 
-                locked_storage.insert(queue_name, storage);
+                self.storage.insert(queue_name, storage);
             }
         };
     }
@@ -98,21 +97,17 @@ impl Storage {
     pub fn get_reader(&self, queue_name: String) -> StorageReader {
         info!("consumer connected: queue_name: {}", &queue_name);
 
-        let mut store_lock = self.queue_storages.lock();
-        
         StorageReader {
             queue_name: queue_name.clone(),
-            queue_storages: Arc::clone(&self.queue_storages),
+            storage: Arc::clone(&self.storage),
             condvar: Arc::clone(&self.condvar)
         }
     }
 
     pub async fn commit(&self, queue_name: String, message_id: String) {
-        let mut store_map = self.queue_storages.lock();
-        
-        match store_map.get_mut(&queue_name) {
-            Some(message_storage) => {
-                if let Some(item) = message_storage.unacked.remove_entry(&message_id) {
+        match self.storage.get_mut(&queue_name) {
+            Some(mut guard) => {
+                if let Some(item) = guard.unacked.remove_entry(&message_id) {
                     info!("commited: queue_name={}, message_id={}", &queue_name, &message_id);
                 }
             },
