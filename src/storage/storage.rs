@@ -11,6 +11,8 @@ use std::thread::JoinHandle;
 use parking_lot::{Condvar};
 use std::sync::Arc;
 use chashmap::CHashMap;
+use tokio::sync::watch::{Receiver, Sender};
+use tokio::sync::watch;
 
 pub struct Message{
     pub id: u64,
@@ -98,7 +100,7 @@ impl Storage {
         info!("consumer connected: queue_name: {}", &queue_name);
 
         StorageReader {
-            queue_name: queue_name.clone(),
+            queue_name,
             storage: Arc::clone(&self.storage),
             condvar: Arc::clone(&self.condvar)
         }
@@ -121,7 +123,8 @@ impl Storage {
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
     pub unacked: BTreeMap<String, Message>,
-    pub worker_thread: Option<JoinHandle<()>>
+    pub worker_thread: Option<JoinHandle<()>>,
+    pub notification: (Sender<()>, Receiver<()>)
 }
 
 impl MessageStorage {
@@ -129,12 +132,19 @@ impl MessageStorage {
         MessageStorage {
             data: VecDeque::new(),
             unacked: BTreeMap::new(),
-            worker_thread: None
+            worker_thread: None,
+            notification: watch::channel(())
         }
     }
 
     pub fn push(&mut self, message: Message) {
         self.data.push_back(Message::clone(&message));
+        self.notify();
+    }
+    
+    fn notify(&self) {
+        let (sender, _) = &self.notification;
+        sender.send(()).unwrap_or(())       
     }
 }
 

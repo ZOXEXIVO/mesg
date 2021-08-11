@@ -1,9 +1,7 @@
 use crate::server::network::grpc::PullResponse;
 use crate::storage::StorageReader;
-use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::time::Duration;
 use tonic::codegen::futures_core::Stream;
 
 pub struct PullResponseStream {
@@ -17,26 +15,28 @@ impl Stream for PullResponseStream {
         match self.reader.storage.get_mut(&self.reader.queue_name) {
             Some(mut store) => {
                 if let Some(item) = store.data.pop_front() {
-                    let cloned_message = item.clone();
-
                     Poll::Ready(Some(Ok(PullResponse {
-                        len: cloned_message.data.len() as i32,
-                        data: cloned_message.data.to_vec(),
-                        message_id: cloned_message.id.to_string(),
+                        len: item.data.len() as i32,
+                        data: item.data.to_vec(),
+                        message_id: item.id.to_string(),
                     })))
                 } else {
-                    let waker = cx.waker().clone();
+                    let (_, rx) = &store.notification;
 
-                    tokio::spawn(async {
-                        tokio::time::sleep(Duration::from_micros(1000)).await;
-                        waker.wake();
+                    let waker = cx.waker().clone();
+                    let mut reciever = rx.clone();
+
+                    tokio::spawn(async move {
+                        if reciever.changed().await.is_ok() {
+                            waker.wake();
+                        }
                     });
 
                     Poll::Pending
                 }
             }
             None => {
-                info!("receiver.poll_recv: None");
+                //TODO
                 Poll::Pending
             }
         }
