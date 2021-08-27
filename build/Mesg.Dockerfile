@@ -5,6 +5,8 @@ COPY ./ ./
 
 RUN cargo test
 
+RUN rustup component add rustfmt
+
 RUN cargo build --release
 
 FROM rust:1.54-slim
