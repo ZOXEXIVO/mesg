@@ -32,7 +32,7 @@ steps:
       - name: docker_sock
         path: /var/run/docker.sock
     commands:
-      - docker run -d -p 172.17.0.1:4000:4000 --restart always --name mesg mesg:1.0.0.$$DRONE_BUILD_NUMBER
+      - docker run -d -p 172.17.0.1:4001:4001 --restart always --name mesg mesg:1.0.0.$$DRONE_BUILD_NUMBER
 
 volumes:
   - name: docker_sock
