@@ -15,4 +15,4 @@ WORKDIR /app
 
 COPY --from=build /src/target/release/mesg .
 
-ENTRYPOINT ["./mesg", "--port 4001"]
+ENTRYPOINT ["./mesg"]
