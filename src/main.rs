@@ -44,12 +44,12 @@ fn get_options() -> MesgServerOptions {
             .takes_value(true)
         ).after_help(r#"EXAMPLES:
 
-        ./mesg --port 33000
+        ./mesg --port 35000
     "#).get_matches();
 
     MesgServerOptions {
         db_path: String::from(matches.value_of("dbpath").unwrap_or(".")),
-        port: matches.value_of("port").unwrap_or("33000").parse::<u16>().unwrap_or(4000)
+        port: matches.value_of("port").unwrap_or("35000").parse::<u16>().unwrap_or(4000)
     }
 }
 
