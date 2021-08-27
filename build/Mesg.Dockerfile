@@ -3,9 +3,9 @@ WORKDIR /src
 
 COPY ./ ./
 
-RUN cargo test
-
 RUN rustup component add rustfmt
+
+RUN cargo test
 
 RUN cargo build --release
 
