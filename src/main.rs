@@ -49,7 +49,7 @@ fn get_options() -> MesgServerOptions {
 
     MesgServerOptions {
         db_path: String::from(matches.value_of("dbpath").unwrap_or(".")),
-        port: matches.value_of("port").unwrap_or("35000").parse::<u16>().unwrap_or(4000)
+        port: matches.value_of("port").unwrap_or("35000").parse::<u16>().unwrap_or(35000)
     }
 }
 
