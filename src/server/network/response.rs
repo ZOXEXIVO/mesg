@@ -1,5 +1,6 @@
 use crate::server::network::grpc::PullResponse;
 use crate::storage::StorageReader;
+use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
@@ -45,6 +46,6 @@ impl Stream for PullResponseStream {
 
 impl Drop for PullResponseStream {
     fn drop(&mut self) {
-        println!("dropped");
+        info!("client disconnected");
     }
 }
