@@ -15,12 +15,10 @@ use crate::server::server::{MesgServerOptions, MesgServer};
 async fn main() -> Result<(), std::io::Error> {
     init_logger();
 
-    let mut server = MesgServer::new(
-        MetricsServer::start()
-    );
-
-    server.run(get_options()).await?;
-
+    let options = get_options();
+    
+    MesgServer::new().run(options).await?;
+    
     Ok(())
 }
 
@@ -42,14 +40,22 @@ fn get_options() -> MesgServerOptions {
             .value_name("PORT")
             .help("listening port")
             .takes_value(true)
+        )
+        .arg(Arg::with_name("metrics-port")
+            .short("mp")
+            .long("metrics-port")
+            .value_name("METRIC_PORT")
+            .help("metrics port")
+            .takes_value(true)
         ).after_help(r#"EXAMPLES:
 
-        ./mesg --port 35000
+        ./mesg --port 35000 --metrics-port 35001
     "#).get_matches();
 
     MesgServerOptions {
         db_path: String::from(matches.value_of("dbpath").unwrap_or(".")),
-        port: matches.value_of("port").unwrap_or("35000").parse::<u16>().unwrap_or(35000)
+        port: matches.value_of("port").unwrap_or("35000").parse::<u16>().unwrap_or(35000),
+        metric_port: matches.value_of("port").unwrap_or("35001").parse::<u16>().unwrap_or(35001),
     }
 }
 

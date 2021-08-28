@@ -11,14 +11,12 @@ use crate::server::network::response::PullResponseStream;
 
 pub struct MesgInternalService {
     storage: Storage,
-    metrics: MetricsWriter,
 }
 
 impl MesgInternalService {
-    pub fn new(options: MesgServerOptions, metrics_writer: MetricsWriter) -> Self {
+    pub fn new(options: MesgServerOptions) -> Self {
         Self {
-            storage: Storage::new(metrics_writer.clone()),
-            metrics: metrics_writer,
+            storage: Storage::new(),
         }
     }
 }
@@ -33,7 +31,7 @@ impl MesgService for MesgInternalService {
 
         self.storage.push(message.queue.clone(), message.data).await;
 
-        self.metrics.inc_push_operation();
+        MetricsWriter::inc_push_metric();
 
         Ok(tonic::Response::new(PushResponse { ack: true }))
     }
@@ -50,7 +48,7 @@ impl MesgService for MesgInternalService {
             reader: self.storage.get_reader(req.queue),
         };
 
-        self.metrics.inc_pull_operation();
+        MetricsWriter::inc_consumers_count_metric();
 
         Ok(tonic::Response::new(pull_stream))
     }
@@ -63,7 +61,7 @@ impl MesgService for MesgInternalService {
 
         self.storage.commit(req.queue, req.message_id).await;
 
-        self.metrics.inc_commit_operation();
+        MetricsWriter::inc_commit_metric();
 
         Ok(tonic::Response::new(CommitResponse {}))
     }

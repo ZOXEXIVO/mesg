@@ -11,7 +11,7 @@ use std::thread::JoinHandle;
 use parking_lot::{Condvar};
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::{Sender};
 use tokio::sync::broadcast;
 
 pub struct Message{
@@ -61,15 +61,13 @@ impl Clone for Message {
 }
 
 pub struct Storage {
-    metrics_writer: MetricsWriter,
     storage: Arc<CHashMap<String, MessageStorage>>,
     condvar: Arc<Condvar>
 }
 
 impl Storage {
-    pub fn new(metrics_writer: MetricsWriter) -> Self {
-        Storage {            
-            metrics_writer,
+    pub fn new() -> Self {
+        Storage {
             storage: Arc::new(CHashMap::new()),
             condvar: Arc::new(Condvar::new())
         }
@@ -77,9 +75,7 @@ impl Storage {
 
     pub async fn push(&self, queue_name: String, data: Vec<u8>) {
         let message_id = StorageIdGenerator::generate();
-        
-        info!("message: id: {} pushed", message_id);
-               
+
         let message = Message::new(message_id, data);
               
         match self.storage.get_mut(&queue_name) {
@@ -92,6 +88,8 @@ impl Storage {
                 storage.push(message);
 
                 self.storage.insert(queue_name, storage);
+                
+                MetricsWriter::inc_queues_count_metric();
             }
         };
     }
@@ -146,11 +144,7 @@ impl MessageStorage {
     
     fn notify(&self) {
         if self.notification.send(()).is_err() {
-            warn!("skip send - no subscriver")
+            warn!("skip send - no subscribers")
         }      
     }
-}
-
-pub struct MessageReader{
-    
 }
