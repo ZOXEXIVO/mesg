@@ -32,30 +32,28 @@ impl MetricsWriter {
     pub fn write(result: &mut String){
         // mesg_push_ops
         writeln!(result, "# HELP mesg_push_ops Number of push operations").unwrap();
-        writeln!(result, "# TYPE mesg_push_ops gauge").unwrap();
+        writeln!(result, "# TYPE mesg_push_ops histogram").unwrap();
         writeln!(result, "mesg_push_ops {}", PUSH_METRIC.load(Ordering::SeqCst)).unwrap();
+        
+        writeln!(result).unwrap();
+
+        // mesg_commit_ops
+        writeln!(result, "# HELP mesg_commit_ops Number of commit operations").unwrap();
+        writeln!(result, "# TYPE mesg_commit_ops histogram").unwrap();
+        writeln!(result, "mesg_commit_ops {}", COMMIT_METRIC.load(Ordering::SeqCst)).unwrap();
 
         writeln!(result).unwrap();
         
-        // mesg_push_ops
+        // mesg_consumers_count
         writeln!(result, "# HELP mesg_consumers_count Number of active consumers").unwrap();
         writeln!(result, "# TYPE mesg_consumers_count gauge").unwrap();
         writeln!(result, "mesg_consumers_count {}", CONSUMERS_COUNT_METRIC.load(Ordering::SeqCst)).unwrap();
 
         writeln!(result).unwrap();
 
-        // mesg_push_ops
+        // mesg_queues_count
         writeln!(result, "# HELP mesg_queues_count Number of queues count").unwrap();
         writeln!(result, "# TYPE mesg_queues_count gauge").unwrap();
         writeln!(result, "mesg_queues_count {}", QUEUES_COUNT_METRIC.load(Ordering::SeqCst)).unwrap();
-
-        writeln!(result).unwrap();
-
-        // mesg_push_ops
-        writeln!(result, "# HELP mesg_commit_ops Number of commit operations").unwrap();
-        writeln!(result, "# TYPE mesg_commit_ops gauge").unwrap();
-        writeln!(result, "mesg_commit_ops {}", COMMIT_METRIC.load(Ordering::SeqCst)).unwrap();
-        
-        writeln!(result).unwrap();
     }
 }
