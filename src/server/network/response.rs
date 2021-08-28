@@ -22,13 +22,11 @@ impl Stream for PullResponseStream {
                         message_id: item.id.to_string(),
                     })))
                 } else {
-                    let (_, rx) = &store.notification;
-
                     let waker = cx.waker().clone();
-                    let mut reciever = rx.clone();
+                    let mut reciever = store.notification.subscribe();
 
                     tokio::spawn(async move {
-                        if reciever.changed().await.is_ok() {
+                        if reciever.recv().await.is_ok() {
                             waker.wake();
                         }
                     });
@@ -36,10 +34,7 @@ impl Stream for PullResponseStream {
                     Poll::Pending
                 }
             }
-            None => {
-                //TODO
-                Poll::Pending
-            }
+            None => Poll::Pending,
         }
     }
 }

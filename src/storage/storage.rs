@@ -11,8 +11,8 @@ use std::thread::JoinHandle;
 use parking_lot::{Condvar};
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::watch::{Receiver, Sender};
-use tokio::sync::watch;
+use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast;
 
 pub struct Message{
     pub id: u64,
@@ -124,16 +124,18 @@ pub struct MessageStorage {
     pub data: VecDeque<Message>,
     pub unacked: BTreeMap<String, Message>,
     pub worker_thread: Option<JoinHandle<()>>,
-    pub notification: (Sender<()>, Receiver<()>)
+    pub notification: Sender<()>
 }
 
 impl MessageStorage {
     pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(1);
+        
         MessageStorage {
             data: VecDeque::new(),
             unacked: BTreeMap::new(),
             worker_thread: None,
-            notification: watch::channel(())
+            notification: tx
         }
     }
 
@@ -143,8 +145,9 @@ impl MessageStorage {
     }
     
     fn notify(&self) {
-        let (sender, _) = &self.notification;
-        sender.send(()).unwrap_or(())       
+        if self.notification.send(()).is_err() {
+            warn!("skip send - no subscriver")
+        }      
     }
 }
 
