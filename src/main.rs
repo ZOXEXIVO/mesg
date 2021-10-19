@@ -5,11 +5,10 @@ mod metrics;
 mod server;
 mod storage;
 
-use crate::metrics::MetricsServer;
 use env_logger::Env;
 
 use clap::{App, Arg};
-use crate::server::server::{MesgServerOptions, MesgServer};
+use crate::server::{MesgServerOptions, MesgServer};
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {

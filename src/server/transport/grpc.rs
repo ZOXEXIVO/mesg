@@ -41,12 +41,12 @@ pub struct CommitRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {}
 #[doc = r" Generated server implementations."]
-pub mod mesg_service_server {
+pub mod mesg_protocol_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with MesgServiceServer."]
+    #[doc = "Generated trait containing gRPC methods that should be implemented for use with MesgProtocolServer."]
     #[async_trait]
-    pub trait MesgService: Send + Sync + 'static {
+    pub trait MesgProtocol: Send + Sync + 'static {
         async fn push(
             &self,
             request: tonic::Request<super::PushRequest>,
@@ -66,13 +66,13 @@ pub mod mesg_service_server {
         ) -> Result<tonic::Response<super::CommitResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct MesgServiceServer<T: MesgService> {
+    pub struct MesgProtocolServer<T: MesgProtocol> {
         inner: _Inner<T>,
         accept_compression_encodings: (),
         send_compression_encodings: (),
     }
     struct _Inner<T>(Arc<T>);
-    impl<T: MesgService> MesgServiceServer<T> {
+    impl<T: MesgProtocol> MesgProtocolServer<T> {
         pub fn new(inner: T) -> Self {
             let inner = Arc::new(inner);
             let inner = _Inner(inner);
@@ -89,9 +89,9 @@ pub mod mesg_service_server {
             InterceptedService::new(Self::new(inner), interceptor)
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for MesgServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for MesgProtocolServer<T>
     where
-        T: MesgService,
+        T: MesgProtocol,
         B: Body + Send + Sync + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
@@ -104,10 +104,10 @@ pub mod mesg_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/grpc.MesgService/Push" => {
+                "/grpc.MesgProtocol/Push" => {
                     #[allow(non_camel_case_types)]
-                    struct PushSvc<T: MesgService>(pub Arc<T>);
-                    impl<T: MesgService> tonic::server::UnaryService<super::PushRequest> for PushSvc<T> {
+                    struct PushSvc<T: MesgProtocol>(pub Arc<T>);
+                    impl<T: MesgProtocol> tonic::server::UnaryService<super::PushRequest> for PushSvc<T> {
                         type Response = super::PushResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
@@ -135,10 +135,10 @@ pub mod mesg_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/grpc.MesgService/Pull" => {
+                "/grpc.MesgProtocol/Pull" => {
                     #[allow(non_camel_case_types)]
-                    struct PullSvc<T: MesgService>(pub Arc<T>);
-                    impl<T: MesgService> tonic::server::ServerStreamingService<super::PullRequest> for PullSvc<T> {
+                    struct PullSvc<T: MesgProtocol>(pub Arc<T>);
+                    impl<T: MesgProtocol> tonic::server::ServerStreamingService<super::PullRequest> for PullSvc<T> {
                         type Response = super::PullResponse;
                         type ResponseStream = T::PullStream;
                         type Future =
@@ -168,10 +168,10 @@ pub mod mesg_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/grpc.MesgService/Commit" => {
+                "/grpc.MesgProtocol/Commit" => {
                     #[allow(non_camel_case_types)]
-                    struct CommitSvc<T: MesgService>(pub Arc<T>);
-                    impl<T: MesgService> tonic::server::UnaryService<super::CommitRequest> for CommitSvc<T> {
+                    struct CommitSvc<T: MesgProtocol>(pub Arc<T>);
+                    impl<T: MesgProtocol> tonic::server::UnaryService<super::CommitRequest> for CommitSvc<T> {
                         type Response = super::CommitResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
@@ -210,7 +210,7 @@ pub mod mesg_service_server {
             }
         }
     }
-    impl<T: MesgService> Clone for MesgServiceServer<T> {
+    impl<T: MesgProtocol> Clone for MesgProtocolServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -220,7 +220,7 @@ pub mod mesg_service_server {
             }
         }
     }
-    impl<T: MesgService> Clone for _Inner<T> {
+    impl<T: MesgProtocol> Clone for _Inner<T> {
         fn clone(&self) -> Self {
             Self(self.0.clone())
         }
@@ -230,7 +230,7 @@ pub mod mesg_service_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: MesgService> tonic::transport::NamedService for MesgServiceServer<T> {
-        const NAME: &'static str = "grpc.MesgService";
+    impl<T: MesgProtocol> tonic::transport::NamedService for MesgProtocolServer<T> {
+        const NAME: &'static str = "grpc.MesgProtocol";
     }
 }

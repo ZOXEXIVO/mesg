@@ -1,5 +1,5 @@
 use crate::metrics::MetricsWriter;
-use crate::server::network::grpc::PullResponse;
+use crate::server::transport::grpc::PullResponse;
 use crate::storage::StorageReader;
 use log::info;
 use std::pin::Pin;

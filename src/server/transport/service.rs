@@ -1,19 +1,19 @@
-use crate::server::server::MesgServerOptions;
+use crate::server::MesgServerOptions;
 use crate::storage::Storage;
 use tonic::Request;
 
 use crate::metrics::MetricsWriter;
-use crate::server::network::grpc::mesg_service_server::MesgService;
-use crate::server::network::grpc::{
+use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
+use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
 };
-use crate::server::network::response::PullResponseStream;
+use crate::server::transport::response::PullResponseStream;
 
-pub struct MesgInternalService {
+pub struct MesgProtocolService {
     storage: Storage,
 }
 
-impl MesgInternalService {
+impl MesgProtocolService {
     pub fn new(options: MesgServerOptions) -> Self {
         Self {
             storage: Storage::new(),
@@ -22,7 +22,7 @@ impl MesgInternalService {
 }
 
 #[tonic::async_trait]
-impl MesgService for MesgInternalService {
+impl MesgProtocol for MesgProtocolService {
     async fn push(
         &self,
         request: Request<PushRequest>,
