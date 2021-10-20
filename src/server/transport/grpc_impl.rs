@@ -1,39 +1,49 @@
-use crate::server::MesgServerOptions;
-use crate::storage::Storage;
 use tonic::Request;
 
-use crate::metrics::MetricsWriter;
+use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel};
 use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
 use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
 };
 use crate::server::transport::response::PullResponseStream;
 
-pub struct MesgProtocolService {
-    storage: Storage,
+pub struct MesgGrpcImplService<T: Mesg>
+where
+    T: Send + Sync + 'static,
+{
+    inner: T,
 }
 
-impl MesgProtocolService {
-    pub fn new(options: MesgServerOptions) -> Self {
-        Self {
-            storage: Storage::new(),
-        }
+impl<T: Mesg> MesgGrpcImplService<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn new(inner: T) -> Self {
+        Self { inner }
     }
 }
 
 #[tonic::async_trait]
-impl MesgProtocol for MesgProtocolService {
+impl<T: Mesg> MesgProtocol for MesgGrpcImplService<T>
+where
+    T: Send + Sync + 'static,
+{
     async fn push(
         &self,
         request: Request<PushRequest>,
     ) -> std::result::Result<tonic::Response<PushResponse>, tonic::Status> {
         let message = request.into_inner();
 
-        self.storage.push(message.queue.clone(), message.data).await;
+        let result = self
+            .inner
+            .push(PushRequestModel {
+                queue: message.queue,
+                data: message.data,
+                len: message.len,
+            })
+            .await;
 
-        MetricsWriter::inc_push_metric();
-
-        Ok(tonic::Response::new(PushResponse { ack: true }))
+        Ok(tonic::Response::new(PushResponse { ack: result.ack }))
     }
 
     type PullStream = PullResponseStream;
@@ -44,11 +54,11 @@ impl MesgProtocol for MesgProtocolService {
     ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
-        let pull_stream = PullResponseStream {
-            reader: self.storage.get_reader(req.queue),
-        };
+        let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
 
-        MetricsWriter::inc_consumers_count_metric();
+        let pull_stream = PullResponseStream {
+            reader: result.reader,
+        };
 
         Ok(tonic::Response::new(pull_stream))
     }
@@ -59,9 +69,12 @@ impl MesgProtocol for MesgProtocolService {
     ) -> std::result::Result<tonic::Response<CommitResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        self.storage.commit(req.queue, req.message_id).await;
-
-        MetricsWriter::inc_commit_metric();
+        self.inner
+            .commit(CommitRequestModel {
+                queue: req.queue,
+                message_id: req.message_id,
+            })
+            .await;
 
         Ok(tonic::Response::new(CommitResponse {}))
     }

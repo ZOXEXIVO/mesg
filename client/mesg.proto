@@ -12,7 +12,7 @@ service MesgProtocol {
 message PushRequest {
   string queue = 1;
   bytes data = 2;
-  int32 len = 3;
+  int64 len = 3;
 }
 
 message PushResponse {
@@ -28,7 +28,7 @@ message PullRequest {
 message PullResponse {
   string messageId = 1;
   bytes data = 2;
-  int32 len = 3;
+  int64 len = 3;
 }
 
 // Commit 

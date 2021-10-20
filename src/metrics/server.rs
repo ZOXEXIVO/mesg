@@ -9,13 +9,12 @@ pub struct MetricsServer;
 
 impl MetricsServer {
     pub async fn start(port: u16) {
-        let make_svc = make_service_fn(|_conn| {
-            async { Ok::<_, Infallible>(service_fn(metrics)) }
-        });
+        let bind_address = ([0, 0, 0, 0], port).into();
 
-        let addr = ([0, 0, 0, 0], port).into();
-
-        let server = Server::bind(&addr).serve(make_svc);
+        let server = Server::bind(&bind_address)
+            .serve(make_service_fn(|_conn| {
+                async { Ok::<_, Infallible>(service_fn(metrics)) }
+            }));
 
         info!("metrics listening 0.0.0.0:{}", port);
 
@@ -24,9 +23,9 @@ impl MetricsServer {
 }
 
 async fn metrics(_: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let mut result = String::with_capacity(1024);
+    let mut result = String::with_capacity(2048);
 
     MetricsWriter::write(&mut result);
-    
+
     Ok(Response::new(Body::from(result)))
 }

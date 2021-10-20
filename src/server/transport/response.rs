@@ -19,7 +19,7 @@ impl Stream for PullResponseStream {
             Some(mut store) => {
                 if let Some(item) = store.data.pop_front() {
                     Poll::Ready(Some(Ok(PullResponse {
-                        len: item.data.len() as i32,
+                        len: item.data.len() as i64,
                         data: item.data.to_vec(),
                         message_id: item.id.to_string(),
                     })))

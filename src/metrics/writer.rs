@@ -1,15 +1,13 @@
 ﻿use std::sync::atomic::{AtomicU64, Ordering};
 use std::fmt::Write;
 
-
 static PUSH_METRIC: AtomicU64 = AtomicU64::new(0);
 static CONSUMERS_COUNT_METRIC: AtomicU64 = AtomicU64::new(0);
 static COMMIT_METRIC: AtomicU64 = AtomicU64::new(0);
 static QUEUES_COUNT_METRIC: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
-pub struct MetricsWriter {
-}
+pub struct MetricsWriter;
 
 impl MetricsWriter {
     pub fn inc_push_metric() {

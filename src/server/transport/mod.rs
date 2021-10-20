@@ -1,3 +1,5 @@
 pub mod grpc;
+pub mod grpc_impl;
 pub mod response;
-pub mod service;
+
+pub use grpc::*;

@@ -1,4 +1,5 @@
 mod transport;
+mod service;
 
 use crate::metrics::{MetricsServer};
 use tonic::transport::Server;
@@ -6,10 +7,12 @@ use tonic::transport::Server;
 use crate::cluster::cluster::Cluster;
 use log::info;
 
-use crate::server::transport::service::MesgProtocolService;
 use std::thread::JoinHandle;
 use tokio::runtime::Runtime;
-use crate::server::transport::grpc::mesg_protocol_server::MesgProtocolServer;
+use crate::server::service::MesgService;
+use crate::server::transport::grpc_impl::MesgGrpcImplService;
+use crate::server::transport::mesg_protocol_server::MesgProtocolServer;
+use crate::storage::Storage;
 
 pub struct MesgServerOptions {
     pub db_path: String,
@@ -18,37 +21,32 @@ pub struct MesgServerOptions {
 }
 
 pub struct MesgServer {
-    service: Option<MesgProtocolService>,
-
     cluster: Cluster,
 
-    metrics: Option<JoinHandle<()>>,
+    metrics_server_thread: Option<JoinHandle<()>>,
 }
 
 impl MesgServer {
     pub fn new() -> Self {
         MesgServer {
             cluster: Cluster::new(),
-            service: None,
-            metrics: None,
+            metrics_server_thread: None,
         }
     }
 
     pub async fn run(&mut self, options: MesgServerOptions) -> std::result::Result<(), std::io::Error> {
         let service_port = options.port;
 
-        self.metrics = Some(MesgServer::start_metrics_server(options.metric_port));
-
-        let service = MesgProtocolServer::new(
-            MesgProtocolService::new(options)
-        );
+        self.metrics_server_thread = Some(MesgServer::start_metrics_server(options.metric_port));
 
         let addr = format!("0.0.0.0:{0}", service_port).parse().unwrap();
 
         info!("listening: {0}", addr);
 
+        let service = MesgService::new(Storage::new());
+        
         Server::builder()
-            .add_service(service)
+            .add_service(MesgProtocolServer::new(MesgGrpcImplService::new(service)))
             .serve(addr)
             .await
             .unwrap();
