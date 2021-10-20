@@ -15,7 +15,7 @@ impl Stream for PullResponseStream {
     type Item = std::result::Result<PullResponse, tonic::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.reader.storage.get_mut(&self.reader.queue_name) {
+        match self.reader.storage.get_mut(&self.reader.queue) {
             Some(mut store) => {
                 if let Some(item) = store.data.pop_front() {
                     Poll::Ready(Some(Ok(PullResponse {

@@ -24,7 +24,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.storage.push(request.queue.clone(), request.data).await;
+        self.storage.push(&request.queue, request.data).await;
 
         MetricsWriter::inc_push_metric();
 
@@ -37,7 +37,7 @@ impl Mesg for MesgService {
         MetricsWriter::inc_consumers_count_metric();
 
         PullResponseModel{
-            reader: self.storage.get_reader(request.queue)
+            reader: self.storage.get_reader(&request.queue)
         }
     }
 

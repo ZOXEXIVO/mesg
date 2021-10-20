@@ -73,12 +73,12 @@ impl Storage {
         }
     }
 
-    pub async fn push(&self, queue_name: String, data: Vec<u8>) {
+    pub async fn push(&self, queue_name: &str, data: Vec<u8>) {
         let message_id = StorageIdGenerator::generate();
 
         let message = Message::new(message_id, data);
               
-        match self.storage.get_mut(&queue_name) {
+        match self.storage.get_mut(queue_name) {
             Some(mut item) => {
                 item.push(message);
             },
@@ -87,18 +87,18 @@ impl Storage {
  
                 storage.push(message);
 
-                self.storage.insert(queue_name, storage);
+                self.storage.insert(queue_name.into(), storage);
                 
                 MetricsWriter::inc_queues_count_metric();
             }
         };
     }
 
-    pub fn get_reader(&self, queue_name: String) -> StorageReader {
-        info!("consumer connected: queue_name: {}", &queue_name);
+    pub fn get_reader(&self, queue: &str) -> StorageReader {
+        info!("consumer connected: queue_name: {}", &queue);
 
         StorageReader {
-            queue_name,
+            queue: queue.into(),
             storage: Arc::clone(&self.storage),
             condvar: Arc::clone(&self.condvar)
         }

@@ -14,7 +14,7 @@ where
     inner: T,
 }
 
-impl<T: Mesg> MesgGrpcImplService<T>
+impl<'g, T: Mesg> MesgGrpcImplService<T>
 where
     T: Send + Sync + 'static,
 {
