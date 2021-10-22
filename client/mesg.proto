@@ -13,6 +13,7 @@ message PushRequest {
   string queue = 1;
   bytes data = 2;
   int64 len = 3;
+  bool broadcast = 4;
 }
 
 message PushResponse {
@@ -20,7 +21,6 @@ message PushResponse {
 }
 
 // Pull
-
 message PullRequest {
   string queue = 1;
 }

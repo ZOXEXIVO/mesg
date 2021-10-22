@@ -2,7 +2,7 @@
 name = "mesg"
 version = "0.1.0"
 authors = ["ZOXEXIVO <zoxexivo@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 
 [dependencies]

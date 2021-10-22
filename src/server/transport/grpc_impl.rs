@@ -40,6 +40,7 @@ where
                 queue: message.queue,
                 data: message.data,
                 len: message.len,
+                broadcast: message.broadcast,
             })
             .await;
 

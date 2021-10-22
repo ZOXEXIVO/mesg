@@ -55,6 +55,7 @@ pub struct PushRequestModel {
     pub queue: String,
     pub data: Vec<u8>,
     pub len: i64,
+    pub broadcast: bool
 }
 
 pub struct PushResponseModel {

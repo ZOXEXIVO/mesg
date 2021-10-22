@@ -7,14 +7,15 @@ pub struct PushRequest {
     pub data: ::prost::alloc::vec::Vec<u8>,
     #[prost(int64, tag = "3")]
     pub len: i64,
+    #[prost(bool, tag = "4")]
+    pub broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
     #[prost(bool, tag = "1")]
     pub ack: bool,
 }
-// Pull
-
+/// Pull
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag = "1")]
