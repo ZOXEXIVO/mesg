@@ -23,6 +23,7 @@ message PushResponse {
 // Pull
 message PullRequest {
   string queue = 1;
+  int32 invisibility_ms = 2;
 }
 
 message PullResponse {

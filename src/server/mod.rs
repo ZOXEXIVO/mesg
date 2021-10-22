@@ -1,7 +1,7 @@
 mod transport;
 mod service;
+mod auxilary;
 
-use crate::metrics::{MetricsServer};
 use tonic::transport::Server;
 
 use crate::cluster::cluster::Cluster;
@@ -9,6 +9,7 @@ use log::info;
 
 use std::thread::JoinHandle;
 use tokio::runtime::Runtime;
+use crate::server::auxilary::AuxiliaryServer;
 use crate::server::service::MesgService;
 use crate::server::transport::grpc_impl::MesgGrpcImplService;
 use crate::server::transport::mesg_protocol_server::MesgProtocolServer;
@@ -37,7 +38,7 @@ impl MesgServer {
     pub async fn run(&mut self, options: MesgServerOptions) -> std::result::Result<(), std::io::Error> {
         let service_port = options.port;
 
-        self.metrics_server_thread = Some(MesgServer::start_metrics_server(options.metric_port));
+        self.metrics_server_thread = Some(MesgServer::start_service_server(options.metric_port));
 
         let addr = format!("0.0.0.0:{0}", service_port).parse().unwrap();
 
@@ -54,9 +55,9 @@ impl MesgServer {
         Ok(())
     }
 
-    fn start_metrics_server(port: u16) -> JoinHandle<()> {
+    fn start_service_server(port: u16) -> JoinHandle<()> {
         std::thread::spawn(move || {
-            Runtime::new().unwrap().block_on(MetricsServer::start(port));
+            Runtime::new().unwrap().block_on(AuxiliaryServer::start(port));
         })
     }
 }

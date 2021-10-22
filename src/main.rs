@@ -25,30 +25,21 @@ fn get_options() -> MesgServerOptions {
     let matches = App::new("mesg")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Artemov Ivan (@ZOXEXIVO)")
-        .about("A simple message broker with GRPC api written in Rust")
-        .arg(
-            Arg::with_name("dbpath")
-                .short("d")
-                .long("dbpath")
-                .value_name("PATH")
-                .help("database path")
-                .takes_value(true))
+        .about("A simple message broker with GRPC contact")
         .arg(Arg::with_name("port")
             .short("p")
             .long("port")
-            .value_name("PORT")
             .help("listening port")
             .takes_value(true)
         )
         .arg(Arg::with_name("metrics-port")
-            .short("mp")
-            .long("metrics-port")
-            .value_name("METRIC_PORT")
-            .help("metrics port")
+            .short("sp")
+            .long("service-port")
+            .help("service port")
             .takes_value(true)
         ).after_help(r#"EXAMPLES:
 
-        ./mesg --port 35000 --metrics-port 35001
+        ./mesg --port 35000 --service-port 35001
     "#).get_matches();
 
     MesgServerOptions {

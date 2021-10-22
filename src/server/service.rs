@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use crate::storage::{Storage, StorageReader};
 use crate::metrics::MetricsWriter;
+use crate::storage::{Storage, StorageReader};
 
 #[async_trait]
 pub trait Mesg {

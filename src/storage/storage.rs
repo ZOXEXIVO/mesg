@@ -1,4 +1,3 @@
-use crate::metrics::MetricsWriter;
 use crate::storage::{StorageReader};
 use crate::storage::utils::StorageIdGenerator;
 use std::collections::{VecDeque};
@@ -13,6 +12,7 @@ use std::sync::Arc;
 use chashmap::CHashMap;
 use tokio::sync::broadcast::{Sender};
 use tokio::sync::broadcast;
+use crate::metrics::MetricsWriter;
 
 pub struct Message{
     pub id: u64,
@@ -107,7 +107,7 @@ impl Storage {
     pub async fn commit(&self, queue_name: String, message_id: String) {
         match self.storage.get_mut(&queue_name) {
             Some(mut guard) => {
-                if let Some(item) = guard.unacked.remove_entry(&message_id) {
+                if let Some(_item) = guard.unacked.remove_entry(&message_id) {
                     info!("commited: queue_name={}, message_id={}", &queue_name, &message_id);
                 }
             },

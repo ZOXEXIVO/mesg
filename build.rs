@@ -4,8 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          .build_client(false)
          .out_dir("src/server/transport")
          .compile(
-             &["client/mesg.proto"],
-             &["client"]
+             &["src/server/transport/proto/mesg.proto"],
+             &["src"]
          )?;
     Ok(())
  }
