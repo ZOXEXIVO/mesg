@@ -1,17 +1,50 @@
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::codegen::futures_core::Stream;
+use bytes::Bytes;
 use crate::metrics::MetricsWriter;
-use crate::server::PullResponse;
-use log::{info};
+use log::{debug, info};
+use tokio::sync::broadcast::Receiver;
+use tokio::time::Duration;
 
 pub struct MesgConsumer {
-    pub queue: String
+    pub reciever: Receiver<ConsumerItem>
 }
 
-impl MesgConsumer {
-    pub async fn try_get_message(&self) -> Poll<(String, Vec<u8>)> {
-       Poll::Ready(("".to_string(), Vec::new()))
+impl Future for MesgConsumer {
+    type Output = ConsumerItem;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Ok(item) = self.reciever.try_recv() {
+            Poll::Ready(ConsumerItem{
+                id: item.id,
+                data: item.data
+            })
+        }
+        else {
+            let waker = cx.waker().clone();
+            
+            tokio::task::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                waker.wake();
+            });
+            
+            Poll::Pending
+        }       
+    }   
+}
+
+pub struct ConsumerItem {
+    pub id: i64,
+    pub data: Bytes
+}
+
+impl Clone for ConsumerItem {
+    fn clone(&self) -> Self {
+        ConsumerItem{
+            id: self.id.clone(),
+            data: Bytes::clone(&self.data)
+        }
     }
 }
 

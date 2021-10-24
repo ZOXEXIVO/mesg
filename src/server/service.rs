@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use crate::metrics::MetricsWriter;
 use crate::controller::{MesgController, MesgConsumer};
+use log::{info};
 
 #[async_trait]
 pub trait Mesg {
@@ -36,13 +37,15 @@ impl Mesg for MesgService {
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel {
         MetricsWriter::inc_consumers_count_metric();
 
+        info!("consumer connected: queue: {}", &request.queue);
+        
         PullResponseModel{
             consumer: self.controller.create_consumer(&request.queue)
         }
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.controller.commit(&request.queue, request.message_id).await;
+        self.controller.commit(&request.queue, request.id).await;
 
         MetricsWriter::inc_commit_metric();
 
@@ -75,7 +78,7 @@ pub struct PullResponseModel {
 
 pub struct CommitRequestModel {
     pub queue: String,
-    pub message_id: String,
+    pub id: i64,
 }
 
 pub struct CommitResponseModel {}

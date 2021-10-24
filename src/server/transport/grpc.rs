@@ -5,7 +5,7 @@ pub struct PushRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag = "4")]
+    #[prost(bool, tag = "3")]
     pub broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -23,12 +23,10 @@ pub struct PullRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
-    #[prost(string, tag = "1")]
-    pub message_id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "1")]
+    pub id: i64,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(int64, tag = "3")]
-    pub len: i64,
 }
 // Commit
 
@@ -36,8 +34,8 @@ pub struct PullResponse {
 pub struct CommitRequest {
     #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub message_id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "2")]
+    pub id: i64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {}

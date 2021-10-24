@@ -1,3 +1,4 @@
+use std::future::Future;
 use tonic::Request;
 
 use crate::controller::MesgConsumer;
@@ -7,6 +8,7 @@ use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
 };
 use crate::server::PullResponse;
+use log::debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
@@ -60,7 +62,9 @@ where
 
         let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
 
-        Ok(tonic::Response::new(InternalConsumer::new(result.consumer)))
+        let internal_consumer = InternalConsumer::new(result.consumer);
+
+        Ok(tonic::Response::new(internal_consumer))
     }
 
     async fn commit(
@@ -72,7 +76,7 @@ where
         self.inner
             .commit(CommitRequestModel {
                 queue: req.queue,
-                message_id: req.message_id,
+                id: req.id,
             })
             .await;
 
@@ -93,14 +97,20 @@ impl InternalConsumer {
 impl Stream for InternalConsumer {
     type Item = std::result::Result<PullResponse, tonic::Status>;
 
-    async fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.inner_consumer.try_get_message() {
-            Poll::Ready((message_id, data)) => Poll::Ready(Some(Ok(PullResponse {
-                message_id,
-                data,
-                len: 0,
-            }))),
-            _ => Poll::Pending,
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.inner_consumer).poll(cx) {
+            Poll::Ready(item) => {
+                debug!("poll ready");
+
+                Poll::Ready(Some(Ok(PullResponse {
+                    id: item.id,
+                    data: item.data.to_vec(), //TODO Allocation
+                })))
+            }
+            _ => {
+                debug!("poll pending");
+                Poll::Pending
+            }
         }
     }
 }
