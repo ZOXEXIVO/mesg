@@ -14,6 +14,9 @@ use crate::server::service::MesgService;
 use crate::server::transport::grpc_impl::MesgGrpcImplService;
 use crate::server::transport::mesg_protocol_server::MesgProtocolServer;
 use crate::storage::Storage;
+use crate::controller::MesgController;
+
+pub use crate::server::transport::grpc::PullResponse;
 
 pub struct MesgServerOptions {
     pub db_path: String,
@@ -44,7 +47,9 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        let service = MesgService::new(Storage::new());
+        let controller = MesgController::new(Storage::new());
+        
+        let service = MesgService::new(controller);
         
         Server::builder()
             .add_service(MesgProtocolServer::new(MesgGrpcImplService::new(service)))

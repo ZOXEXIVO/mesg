@@ -104,15 +104,15 @@ impl Storage {
         }
     }
 
-    pub async fn commit(&self, queue_name: String, message_id: String) {
-        match self.storage.get_mut(&queue_name) {
+    pub async fn commit(&self, queue_name: &str, message_id: String) {
+        match self.storage.get_mut(queue_name) {
             Some(mut guard) => {
                 if let Some(_item) = guard.unacked.remove_entry(&message_id) {
-                    info!("commited: queue_name={}, message_id={}", &queue_name, &message_id);
+                    info!("commited: queue_name={}, message_id={}", queue_name, &message_id);
                 }
             },
             None => {
-                warn!("commit failed: queue_name={}, message_id={}", &queue_name, &message_id);
+                warn!("commit failed: queue_name={}, message_id={}", queue_name, &message_id);
             }
         };
     }

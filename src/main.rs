@@ -4,6 +4,7 @@ mod cluster;
 mod metrics;
 mod server;
 mod storage;
+mod controller;
 
 use env_logger::Env;
 

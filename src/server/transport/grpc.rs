@@ -5,8 +5,6 @@ pub struct PushRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(int64, tag = "3")]
-    pub len: i64,
     #[prost(bool, tag = "4")]
     pub broadcast: bool,
 }

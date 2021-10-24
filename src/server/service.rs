@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use crate::metrics::MetricsWriter;
-use crate::storage::{Storage, StorageReader};
+use crate::controller::{MesgController, MesgConsumer};
 
 #[async_trait]
 pub trait Mesg {
@@ -10,13 +10,13 @@ pub trait Mesg {
 }
 
 pub struct MesgService {
-    storage: Storage,
+    controller: MesgController
 }
 
 impl MesgService {
-    pub fn new(storage: Storage) -> Self {
+    pub fn new(controller: MesgController) -> Self {
         MesgService {
-            storage
+            controller
         }
     }
 }
@@ -24,7 +24,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.storage.push(&request.queue, request.data).await;
+        self.controller.push(&request.queue, request.data).await;
 
         MetricsWriter::inc_push_metric();
 
@@ -37,12 +37,12 @@ impl Mesg for MesgService {
         MetricsWriter::inc_consumers_count_metric();
 
         PullResponseModel{
-            reader: self.storage.get_reader(&request.queue)
+            consumer: self.controller.create_consumer(&request.queue)
         }
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.storage.commit(request.queue, request.message_id).await;
+        self.controller.commit(&request.queue, request.message_id).await;
 
         MetricsWriter::inc_commit_metric();
 
@@ -54,7 +54,6 @@ impl Mesg for MesgService {
 pub struct PushRequestModel {
     pub queue: String,
     pub data: Vec<u8>,
-    pub len: i64,
     pub broadcast: bool
 }
 
@@ -69,7 +68,7 @@ pub struct PullRequestModel {
 }
 
 pub struct PullResponseModel {
-    pub reader: StorageReader
+    pub consumer: MesgConsumer
 }
 
 // Commit

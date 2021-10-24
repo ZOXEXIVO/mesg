@@ -1,11 +1,15 @@
 use tonic::Request;
 
+use crate::controller::MesgConsumer;
 use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel};
 use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
 use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
 };
-use crate::server::transport::response::PullResponseStream;
+use crate::server::PullResponse;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tonic::codegen::futures_core::Stream;
 
 pub struct MesgGrpcImplService<T: Mesg>
 where
@@ -39,7 +43,6 @@ where
             .push(PushRequestModel {
                 queue: message.queue,
                 data: message.data,
-                len: message.len,
                 broadcast: message.broadcast,
             })
             .await;
@@ -47,7 +50,7 @@ where
         Ok(tonic::Response::new(PushResponse { ack: result.ack }))
     }
 
-    type PullStream = PullResponseStream;
+    type PullStream = InternalConsumer;
 
     async fn pull(
         &self,
@@ -57,11 +60,7 @@ where
 
         let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
 
-        let pull_stream = PullResponseStream {
-            reader: result.reader,
-        };
-
-        Ok(tonic::Response::new(pull_stream))
+        Ok(tonic::Response::new(InternalConsumer::new(result.consumer)))
     }
 
     async fn commit(
@@ -78,5 +77,30 @@ where
             .await;
 
         Ok(tonic::Response::new(CommitResponse {}))
+    }
+}
+
+pub struct InternalConsumer {
+    pub inner_consumer: MesgConsumer,
+}
+
+impl InternalConsumer {
+    pub fn new(inner_consumer: MesgConsumer) -> Self {
+        InternalConsumer { inner_consumer }
+    }
+}
+
+impl Stream for InternalConsumer {
+    type Item = std::result::Result<PullResponse, tonic::Status>;
+
+    async fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.inner_consumer.try_get_message() {
+            Poll::Ready((message_id, data)) => Poll::Ready(Some(Ok(PullResponse {
+                message_id,
+                data,
+                len: 0,
+            }))),
+            _ => Poll::Pending,
+        }
     }
 }
