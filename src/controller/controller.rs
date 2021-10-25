@@ -25,8 +25,6 @@ impl MesgController {
         match self.consumers.get_mut(queue) {
             Some(mut consumer) => {
                 consumer.add_consumer(sender);
-
-                info!("create new consumer_list for queue={}", queue);
             }
             None => {
                 let mut consumer = ConsumerBag::new();
@@ -34,8 +32,6 @@ impl MesgController {
                 consumer.add_consumer(sender);
 
                 self.consumers.insert(queue.into(), consumer);
-
-                info!("use existing consumer_list for queue={}", queue);
             }
         }
 
@@ -59,7 +55,6 @@ impl MesgController {
         {
             if let Some(consumer) = self.consumers.get(queue) {
                 if broadcast {
-                    info!("use broadcast send. id={}", id);
                     for (idx, item) in consumer.consumers.iter().enumerate() {
                         let consumer_item = ConsumerItem {
                             id,
@@ -77,8 +72,6 @@ impl MesgController {
                         }
                     }
                 } else {
-                    info!("use direct send. id={}", id);
-                    
                     let consumer_item = ConsumerItem {
                         id,
                         data: Bytes::clone(&data),
@@ -108,8 +101,6 @@ impl MesgController {
 
         // Remove
         if !consumers_to_remove.is_empty() {
-            info!("consumers to remove non empty, queue={}", queue);
-            
             if let Some(mut consumer) = self.consumers.get_mut(queue) {
                 for consumer_to_remove_id in consumers_to_remove {
                     consumer.remove_consumer(consumer_to_remove_id);
@@ -138,7 +129,10 @@ impl ConsumerBag {
     }
 
     pub fn remove_consumer(&mut self, idx: usize) {
-        self.consumers.remove(idx);
+        if idx < self.consumers.len() {
+            self.consumers.remove(idx);
+        }
+        
         self.current_consumer.store(0, Ordering::SeqCst)
     }
 

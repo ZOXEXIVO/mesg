@@ -80,18 +80,6 @@ impl MessageStorage {
     }
 }
 
-pub struct Consumer {
-    sender: UnboundedSender<ConsumerItem>
-}
-
-impl Consumer {
-    pub fn new(sender: UnboundedSender<ConsumerItem>) -> Self {
-        Consumer {
-            sender
-        }
-    }
-}
-
 pub struct Message{
     pub id: i64,
     pub data: Bytes,

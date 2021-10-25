@@ -53,7 +53,6 @@ pub mod mesg_protocol_server {
         #[doc = "Server streaming response type for the Pull method."]
         type PullStream: futures_core::Stream<Item = Result<super::PullResponse, tonic::Status>>
             + Send
-            + Sync
             + 'static;
         async fn pull(
             &self,
@@ -91,7 +90,7 @@ pub mod mesg_protocol_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for MesgProtocolServer<T>
     where
         T: MesgProtocol,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;

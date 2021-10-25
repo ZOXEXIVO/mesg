@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use bytes::Bytes;
 use crate::metrics::MetricsWriter;
-use log::{debug, info};
+use log::{info};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub struct MesgConsumer {
@@ -22,8 +22,6 @@ impl Future for MesgConsumer {
     type Output = ConsumerItem;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        debug!("poll");
-        
         match self.reciever.poll_recv(cx) {
             Poll::Ready(citem) => {
                 if let Some(item) = citem {

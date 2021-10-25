@@ -9,7 +9,6 @@ use crate::server::transport::grpc::{
 };
 use crate::server::PullResponse;
 use bytes::Bytes;
-use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
@@ -101,17 +100,12 @@ impl Stream for InternalConsumer {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.inner_consumer).poll(cx) {
             Poll::Ready(item) => {
-                info!("poll ready");
-
                 Poll::Ready(Some(Ok(PullResponse {
                     id: item.id,
                     data: item.data.to_vec(), //TODO Allocation
                 })))
             }
-            _ => {
-                info!("poll pending");
-                Poll::Pending
-            }
+            _ => Poll::Pending,
         }
     }
 }
