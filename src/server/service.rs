@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bytes::Bytes;
 use crate::metrics::MetricsWriter;
 use crate::controller::{MesgController, MesgConsumer};
 use log::{info};
@@ -25,7 +26,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.controller.push(&request.queue, request.data).await;
+        self.controller.push(&request.queue, request.data, request.broadcast).await;
 
         MetricsWriter::inc_push_metric();
 
@@ -56,7 +57,7 @@ impl Mesg for MesgService {
 // Push
 pub struct PushRequestModel {
     pub queue: String,
-    pub data: Vec<u8>,
+    pub data: Bytes,
     pub broadcast: bool
 }
 

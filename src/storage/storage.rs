@@ -1,14 +1,13 @@
 use crate::storage::utils::StorageIdGenerator;
 use std::collections::{VecDeque};
 
-use log::{debug, info, warn};
+use log::{info, warn};
 use bytes::Bytes;
 use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::sync::broadcast;
+use tokio::sync::mpsc::{UnboundedSender};
 use crate::controller::ConsumerItem;
 use crate::metrics::MetricsWriter;
 
@@ -23,49 +22,36 @@ impl Storage {
         }
     }
 
-    pub async fn push(&self, queue: &str, data: Vec<u8>) {
-        let message = Message::new(StorageIdGenerator::generate(), data);
+    pub async fn push(&self, queue: &str, data: Bytes) -> i64 {
+        let message_id = StorageIdGenerator::generate();
+        
+        let message = Message::new(message_id, data);
               
         match self.storage.get_mut(queue) {
             Some(mut item) => {
+                //TODO async
                 item.push(message);
             },
             None => {
                 MetricsWriter::inc_queues_count_metric();
                 
                 let mut storage = MessageStorage::new();
- 
+
+                //TODO async
                 storage.push(message);
 
                 self.storage.insert(queue.into(), storage);
             }
         };
-    }
 
-    pub fn subscribe(&self, queue: &str) -> Receiver<ConsumerItem> {
-        match self.storage.get_mut(queue) {
-            Some(guard) => {
-                guard.subscribe()
-            },
-            None => {
-                MetricsWriter::inc_queues_count_metric();
-                
-                let storage = MessageStorage::new();
-                
-                let reciever = storage.subscribe();
-                    
-                self.storage.insert(queue.into(), storage);
-
-                reciever
-            }
-        }
+        message_id
     }
     
     pub async fn commit(&self, queue: &str, id: i64) {
         match self.storage.get_mut(queue) {
             Some(mut guard) => {
                 if let Some(_item) = guard.unacked.remove_entry(&id) {
-                    debug!("commited: queue={}, message_id={}", queue, &id);
+                    info!("commited: queue={}, message_id={}", queue, &id);
                 }
             },
             None => {
@@ -78,38 +64,33 @@ impl Storage {
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
     pub unacked: BTreeMap<i64, Message>,
-    pub consumers: (Sender<ConsumerItem>, Receiver<ConsumerItem>)
+
 }
 
 impl MessageStorage {
     pub fn new() -> Self {
         MessageStorage {
             data: VecDeque::new(),
-            unacked: BTreeMap::new(),
-            consumers: broadcast::channel(1024)
+            unacked: BTreeMap::new()
         }
     }
 
-    pub fn push(&mut self, message: Message) {
+    pub fn push(&mut self, message: Message)  {
         self.data.push_back(Message::clone(&message));
-        self.send_notification(message);
-    }
-    
-    pub fn subscribe(&self) -> Receiver<ConsumerItem> {
-        let (tx, _) = &self.consumers;
-        tx.subscribe()
-    }
-    
-    fn send_notification(&self, message: Message) {
-        let (tx, _) = &self.consumers;
-
-        tx.send(ConsumerItem{
-            id: message.id,
-            data: Bytes::clone(&message.data)
-        });
     }
 }
 
+pub struct Consumer {
+    sender: UnboundedSender<ConsumerItem>
+}
+
+impl Consumer {
+    pub fn new(sender: UnboundedSender<ConsumerItem>) -> Self {
+        Consumer {
+            sender
+        }
+    }
+}
 
 pub struct Message{
     pub id: i64,
@@ -138,10 +119,10 @@ impl PartialOrd<Message> for Message {
 }
 
 impl Message{
-    pub fn new(id: i64, data: Vec<u8>) -> Self {
+    pub fn new(id: i64, data: Bytes) -> Self {
         Message {
             id,
-            data: Bytes::copy_from_slice(&data),
+            data: Bytes::clone(&data),
             delivered: false
         }
     }

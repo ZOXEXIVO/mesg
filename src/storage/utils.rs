@@ -1,4 +1,3 @@
-use core::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 static CURRENT: AtomicI64 = AtomicI64::new(0);

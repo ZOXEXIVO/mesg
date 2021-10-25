@@ -8,7 +8,8 @@ use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
 };
 use crate::server::PullResponse;
-use log::debug;
+use bytes::Bytes;
+use log::info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
@@ -44,7 +45,7 @@ where
             .inner
             .push(PushRequestModel {
                 queue: message.queue,
-                data: message.data,
+                data: Bytes::copy_from_slice(&message.data),
                 broadcast: message.broadcast,
             })
             .await;
@@ -100,7 +101,7 @@ impl Stream for InternalConsumer {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.inner_consumer).poll(cx) {
             Poll::Ready(item) => {
-                debug!("poll ready");
+                info!("poll ready");
 
                 Poll::Ready(Some(Ok(PullResponse {
                     id: item.id,
@@ -108,7 +109,7 @@ impl Stream for InternalConsumer {
                 })))
             }
             _ => {
-                debug!("poll pending");
+                info!("poll pending");
                 Poll::Pending
             }
         }

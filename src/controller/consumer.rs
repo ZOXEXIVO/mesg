@@ -4,46 +4,49 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use crate::metrics::MetricsWriter;
 use log::{debug, info};
-use tokio::sync::broadcast::Receiver;
-use tokio::time::Duration;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 pub struct MesgConsumer {
-    pub reciever: Receiver<ConsumerItem>
+    pub reciever: UnboundedReceiver<ConsumerItem>,
+}
+
+impl MesgConsumer {
+    pub fn new(reciever: UnboundedReceiver<ConsumerItem>) -> Self {
+        MesgConsumer {
+            reciever
+        }
+    }
 }
 
 impl Future for MesgConsumer {
     type Output = ConsumerItem;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Ok(item) = self.reciever.try_recv() {
-            Poll::Ready(ConsumerItem{
-                id: item.id,
-                data: item.data
-            })
+        debug!("poll");
+        
+        match self.reciever.poll_recv(cx) {
+            Poll::Ready(citem) => {
+                if let Some(item) = citem {
+                    Poll::Ready(item)
+                } else {
+                    Poll::Pending
+                }
+            }
+            Poll::Pending => Poll::Pending
         }
-        else {
-            let waker = cx.waker().clone();
-            
-            tokio::task::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                waker.wake();
-            });
-            
-            Poll::Pending
-        }       
-    }   
+    }
 }
 
 pub struct ConsumerItem {
     pub id: i64,
-    pub data: Bytes
+    pub data: Bytes,
 }
 
 impl Clone for ConsumerItem {
     fn clone(&self) -> Self {
-        ConsumerItem{
+        ConsumerItem {
             id: self.id.clone(),
-            data: Bytes::clone(&self.data)
+            data: Bytes::clone(&self.data),
         }
     }
 }

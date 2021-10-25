@@ -13,6 +13,8 @@ use crate::server::{MesgServerOptions, MesgServer};
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    color_eyre::install().unwrap();
+    
     init_logger();
 
     let options = get_options();
