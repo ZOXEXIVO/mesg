@@ -1,13 +1,16 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, AtomicU32};
 use bytes::Bytes;
 use chashmap::{CHashMap};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use crate::storage::{Storage};
 use crate::controller::{ConsumerItem, MesgConsumer};
 use log::{info};
+use std::error::Error;
+use std::fmt::{Debug, Formatter, Display};
 
 pub struct MesgController {
     storage: Storage,
+    router: ConsumerRouter,
     consumers: CHashMap<String, ConsumerBag>,
 }
 
@@ -15,6 +18,7 @@ impl MesgController {
     pub fn new(storage: Storage) -> Self {
         MesgController {
             storage,
+            router: ConsumerRouter::new(),
             consumers: CHashMap::new(),
         }
     }
@@ -42,20 +46,24 @@ impl MesgController {
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
         let id = self.storage.push(queue, Bytes::clone(&data)).await;
-        self.consume(queue, id, data, broadcast);
+        
+        match self.consume(queue, id, data, broadcast) {
+            Ok(_) => {}
+            Err(_) => {}
+        }
     }
 
     pub async fn commit(&self, queue: &str, id: i64) {
         self.storage.commit(queue, id).await;
     }
 
-    fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) {
-        let mut consumers_to_remove = Vec::new();
+    fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) -> Result<(), ConsumeError> {
+        let mut consumers_ids_to_remove = Vec::new();
 
         {
             if let Some(consumer) = self.consumers.get(queue) {
                 if broadcast {
-                    for (idx, item) in consumer.consumers.iter().enumerate() {
+                    for (idx, (consumer_id, item)) in consumer.consumers.iter().enumerate() {
                         let consumer_item = ConsumerItem {
                             id,
                             data: Bytes::clone(&data),
@@ -67,7 +75,7 @@ impl MesgController {
                             }
                             Err(_) => {
                                 info!("broadcast: message id={}, delivery error", id);
-                                consumers_to_remove.push(idx);
+                                consumers_ids_to_remove.push(*consumer_id);
                             }
                         }
                     }
@@ -76,18 +84,23 @@ impl MesgController {
                         id,
                         data: Bytes::clone(&data),
                     };
-
-                    let next_consumer = consumer.next_consumer();
-
-                    match consumer.consumers.get(next_consumer) {
-                        Some(consumer) => {
-                            match consumer.send(consumer_item) {
+                    
+                    let next_consumer_index = self.router.get_next_consumer_id(&consumer.consumers);
+                    if next_consumer_index.is_none() {
+                        return Err(ConsumeError::from("no_consumers"));
+                    }
+                    
+                    let next_idx = next_consumer_index.unwrap();
+                    
+                    match consumer.consumers.get(next_idx) {
+                        Some((_, cs)) => {
+                            match cs.send(consumer_item) {
                                 Ok(_) => {
                                     info!("direct: message id={}, delivered success", id);
                                 }
                                 Err(_) => {
                                     info!("direct: message id={}, delivery error", id);
-                                    consumers_to_remove.push(next_consumer);
+                                    consumers_ids_to_remove.push(consumer.consumers[next_idx].0);
                                 }
                             }
                         }
@@ -100,45 +113,94 @@ impl MesgController {
         }
 
         // Remove
-        if !consumers_to_remove.is_empty() {
+        if !consumers_ids_to_remove.is_empty() {
             if let Some(mut consumer) = self.consumers.get_mut(queue) {
-                for consumer_to_remove_id in consumers_to_remove {
-                    consumer.remove_consumer(consumer_to_remove_id);
-                    info!("consumer removed, queue={}, idx={}", queue, consumer_to_remove_id);
-                }
+                consumer.remove_consumers(&consumers_ids_to_remove);
             }
         }
+
+        Ok(())
     }
 }
 
+type Consumer = (u32, UnboundedSender<ConsumerItem>);
+
 pub struct ConsumerBag {
-    current_consumer: AtomicUsize,
-    pub consumers: Vec<UnboundedSender<ConsumerItem>>,
+    generator: AtomicU32,
+    pub consumers: Vec<Consumer>,
 }
 
 impl ConsumerBag {
     pub fn new() -> Self {
         ConsumerBag {
-            current_consumer: AtomicUsize::new(0),
+            generator: AtomicU32::new(0),
             consumers: Vec::new(),
         }
     }
 
     pub fn add_consumer(&mut self, consumer: UnboundedSender<ConsumerItem>) {
-        self.consumers.push(consumer)
+        let id = self.generator.fetch_add(1, Ordering::SeqCst);
+        self.consumers.push((id, consumer));
     }
 
-    pub fn remove_consumer(&mut self, idx: usize) {
-        if idx < self.consumers.len() {
+    pub fn remove_consumers(&mut self, ids: &[u32]) {
+        for id in ids {
+            let idx = self.consumers.iter().position(|(c_id, _)| c_id == id).unwrap();
             self.consumers.remove(idx);
         }
-        
-        self.current_consumer.store(0, Ordering::SeqCst)
-    }
-
-    pub fn next_consumer(&self) -> usize {
-         self.current_consumer.fetch_add(1, Ordering::SeqCst) % self.consumers.len()        
     }
 }
 
+pub struct ConsumerRouter {
+    current_consumer: AtomicUsize
+}
 
+impl ConsumerRouter {
+    pub fn new() -> Self {
+        ConsumerRouter {
+            current_consumer: AtomicUsize::new(0)
+        }
+    }
+    
+    pub fn get_next_consumer_id(&self, consumers: &[Consumer]) -> Option<usize> {
+        if consumers.is_empty() {
+            return None;
+        }
+        
+        let mut next_idx = self.current_consumer.fetch_add(1, Ordering::SeqCst);
+        if next_idx >= consumers.len() {
+            next_idx = 0;
+            self.current_consumer.store(0, Ordering::SeqCst);
+        }
+
+        Some(next_idx)
+    }
+}
+
+pub struct ConsumeError {
+    error_message: String
+}
+
+impl Debug for ConsumeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Consuming error")
+    }
+}
+
+impl Display for ConsumeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Consuming error")
+    }
+}
+
+impl Error for ConsumeError {
+    
+}
+
+impl From<&str> for ConsumeError {
+    fn from(error_message: &str) -> Self {
+        ConsumeError {
+            error_message: error_message.into()
+        }
+    }
+}
