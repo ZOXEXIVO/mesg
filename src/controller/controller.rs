@@ -46,29 +46,27 @@ impl MesgController {
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
         let id = self.storage.push(queue, Bytes::clone(&data)).await;
-        
-        match self.consume(queue, id, data, broadcast) {
-            Ok(_) => {}
-            Err(_) => {}
-        }
+        // TODO Move
+        self.consume(queue, id, Bytes::clone(&data), broadcast).unwrap();
     }
 
-    pub async fn commit(&self, queue: &str, id: i64) {
-        self.storage.commit(queue, id).await;
+    pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
+        self.storage.commit(queue, id, consumer_id).await;
     }
 
     fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) -> Result<(), ConsumeError> {
         let mut consumers_ids_to_remove = Vec::new();
-
+    
         {
-            if let Some(consumer) = self.consumers.get(queue) {
+            if let Some(queue_consumer) = self.consumers.get(queue) {
                 if broadcast {
-                    for (idx, (consumer_id, item)) in consumer.consumers.iter().enumerate() {
+                    for (consumer_id, item) in &queue_consumer.consumers {
                         let consumer_item = ConsumerItem {
                             id,
                             data: Bytes::clone(&data),
+                            consumer_id: *consumer_id
                         };
-
+    
                         match item.send(consumer_item) {
                             Ok(_) => {
                                 info!("broadcast: message id={}, delivered success", id);
@@ -79,46 +77,40 @@ impl MesgController {
                             }
                         }
                     }
-                } else {
+                } else {                    
+                    let next_consumer = self.router.get_next_consumer(&queue_consumer.consumers);
+                    if next_consumer.is_none() {
+                        return Err(ConsumeError::from("no_consumers"));
+                    }
+
+                    let (next_consumer_id, next_consumer_channel) = next_consumer.unwrap();
+
                     let consumer_item = ConsumerItem {
                         id,
                         data: Bytes::clone(&data),
+                        consumer_id: *next_consumer_id
                     };
                     
-                    let next_consumer_index = self.router.get_next_consumer_id(&consumer.consumers);
-                    if next_consumer_index.is_none() {
-                        return Err(ConsumeError::from("no_consumers"));
-                    }
-                    
-                    let next_idx = next_consumer_index.unwrap();
-                    
-                    match consumer.consumers.get(next_idx) {
-                        Some((_, cs)) => {
-                            match cs.send(consumer_item) {
-                                Ok(_) => {
-                                    info!("direct: message id={}, delivered success", id);
-                                }
-                                Err(_) => {
-                                    info!("direct: message id={}, delivery error", id);
-                                    consumers_ids_to_remove.push(consumer.consumers[next_idx].0);
-                                }
-                            }
+                    match next_consumer_channel.send(consumer_item) {
+                        Ok(_) => {
+                            info!("direct: message id={}, delivered success", id);
                         }
-                        None => {
-                            info!("direct: message id={}, delivery error: no consumers found", id);                            
+                        Err(_) => {
+                            info!("direct: message id={}, delivery error", id);
+                            consumers_ids_to_remove.push(*next_consumer_id);
                         }
                     }
                 }
             }
         }
-
+    
         // Remove
         if !consumers_ids_to_remove.is_empty() {
             if let Some(mut consumer) = self.consumers.get_mut(queue) {
                 consumer.remove_consumers(&consumers_ids_to_remove);
             }
         }
-
+    
         Ok(())
     }
 }
@@ -162,7 +154,7 @@ impl ConsumerRouter {
         }
     }
     
-    pub fn get_next_consumer_id(&self, consumers: &[Consumer]) -> Option<usize> {
+    pub fn get_next_consumer<'c>(&self, consumers: &'c [Consumer]) -> Option<&'c Consumer> {
         if consumers.is_empty() {
             return None;
         }
@@ -173,7 +165,7 @@ impl ConsumerRouter {
             self.current_consumer.store(0, Ordering::SeqCst);
         }
 
-        Some(next_idx)
+        Some(&consumers[next_idx])
     }
 }
 
@@ -183,19 +175,17 @@ pub struct ConsumeError {
 
 impl Debug for ConsumeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Consuming error")
+        write!(f, "Consuming error: {}", self.error_message)
     }
 }
 
 impl Display for ConsumeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Consuming error")
+        write!(f, "Consuming error: {}", self.error_message)
     }
 }
 
-impl Error for ConsumeError {
-    
-}
+impl Error for ConsumeError {}
 
 impl From<&str> for ConsumeError {
     fn from(error_message: &str) -> Self {

@@ -77,6 +77,7 @@ where
             .commit(CommitRequestModel {
                 queue: req.queue,
                 id: req.id,
+                consumer_id: req.consumer_id,
             })
             .await;
 
@@ -103,6 +104,7 @@ impl Stream for InternalConsumer {
                 Poll::Ready(Some(Ok(PullResponse {
                     id: item.id,
                     data: item.data.to_vec(), //TODO Allocation
+                    consumer_id: item.consumer_id,
                 })))
             }
             _ => Poll::Pending,

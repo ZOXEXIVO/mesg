@@ -7,8 +7,6 @@ use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::mpsc::{UnboundedSender};
-use crate::controller::ConsumerItem;
 use crate::metrics::MetricsWriter;
 
 pub struct Storage {
@@ -47,7 +45,7 @@ impl Storage {
         message_id
     }
     
-    pub async fn commit(&self, queue: &str, id: i64) {
+    pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
         match self.storage.get_mut(queue) {
             Some(mut guard) => {
                 if let Some(_item) = guard.unacked.remove_entry(&id) {

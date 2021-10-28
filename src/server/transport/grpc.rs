@@ -27,6 +27,8 @@ pub struct PullResponse {
     pub id: i64,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "3")]
+    pub consumer_id: u32,
 }
 // Commit
 
@@ -36,6 +38,8 @@ pub struct CommitRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(int64, tag = "2")]
     pub id: i64,
+    #[prost(uint32, tag = "3")]
+    pub consumer_id: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {}

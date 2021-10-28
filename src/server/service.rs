@@ -46,7 +46,7 @@ impl Mesg for MesgService {
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.controller.commit(&request.queue, request.id).await;
+        self.controller.commit(&request.queue, request.id, request.consumer_id).await;
 
         MetricsWriter::inc_commit_metric();
 
@@ -80,6 +80,7 @@ pub struct PullResponseModel {
 pub struct CommitRequestModel {
     pub queue: String,
     pub id: i64,
+    pub consumer_id: u32,
 }
 
 pub struct CommitResponseModel {}
