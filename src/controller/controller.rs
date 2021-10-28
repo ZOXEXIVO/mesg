@@ -3,7 +3,7 @@ use bytes::Bytes;
 use chashmap::{CHashMap};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use crate::storage::{Storage};
-use crate::controller::{ConsumerItem, MesgConsumer};
+use crate::controller::{ConsumerItem, MesgStreamConsumer};
 use log::{info};
 use std::error::Error;
 use std::fmt::{Debug, Formatter, Display};
@@ -23,7 +23,7 @@ impl MesgController {
         }
     }
 
-    pub fn create_consumer(&self, queue: &str) -> MesgConsumer {
+    pub fn create_consumer(&self, queue: &str) -> MesgStreamConsumer {
         let (sender, reciever) = unbounded_channel();
 
         match self.consumers.get_mut(queue) {
@@ -41,7 +41,7 @@ impl MesgController {
 
         info!("consumer created for queue={}", queue);
         
-        MesgConsumer::new(reciever)
+        MesgStreamConsumer::new(reciever)
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {

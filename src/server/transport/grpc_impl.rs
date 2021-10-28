@@ -1,7 +1,7 @@
 use std::future::Future;
 use tonic::Request;
 
-use crate::controller::MesgConsumer;
+use crate::controller::MesgStreamConsumer;
 use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel};
 use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
 use crate::server::transport::grpc::{
@@ -86,11 +86,11 @@ where
 }
 
 pub struct InternalConsumer {
-    pub inner_consumer: MesgConsumer,
+    pub inner_consumer: MesgStreamConsumer,
 }
 
 impl InternalConsumer {
-    pub fn new(inner_consumer: MesgConsumer) -> Self {
+    pub fn new(inner_consumer: MesgStreamConsumer) -> Self {
         InternalConsumer { inner_consumer }
     }
 }

@@ -11,7 +11,7 @@ hyper = { version = "0.14.14", features = ["full"] }
 toml = "0.5.8"
 lz4 = "1.23.2"
 serde = "1.0.130"
-tonic = "0.6.0"
+tonic = "0.6.1"
 prost = "0.9.0"
 timer = "0.2.0"
 chrono = "0.4.19"
