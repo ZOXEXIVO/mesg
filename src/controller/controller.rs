@@ -41,13 +41,23 @@ impl MesgController {
 
         info!("consumer created for queue={}", queue);
         
-        MesgConsumer::new(reciever)
+        let (shutdown_sender, mut shutdown_reciever) = tokio::sync::mpsc::channel(1);
+        
+        tokio::spawn(async move {
+            loop {
+                if shutdown_reciever.try_recv().is_ok() {
+                    info!("consumer recieve shudown signal");
+                    break;
+                }
+                
+            }           
+        });
+        
+        MesgConsumer::new(reciever, shutdown_sender)
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
-        let id = self.storage.push(queue, Bytes::clone(&data)).await;
-        // TODO Move
-        self.consume(queue, id, Bytes::clone(&data), broadcast).unwrap();
+        self.storage.push(queue, Bytes::clone(&data)).await;
     }
 
     pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {

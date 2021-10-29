@@ -5,15 +5,19 @@ use bytes::Bytes;
 use crate::metrics::MetricsWriter;
 use log::{info};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Sender;
+use tokio::task::block_in_place;
 
 pub struct MesgConsumer {
     pub reciever: UnboundedReceiver<ConsumerItem>,
+    pub shudown_channel: Sender<()>
 }
 
 impl MesgConsumer {
-    pub fn new(reciever: UnboundedReceiver<ConsumerItem>) -> Self {
+    pub fn new(reciever: UnboundedReceiver<ConsumerItem>, shudown_channel: Sender<()>) -> Self {
         MesgConsumer {
-            reciever
+            reciever,
+            shudown_channel
         }
     }
 }
@@ -54,6 +58,9 @@ impl Clone for ConsumerItem {
 impl Drop for MesgConsumer {
     fn drop(&mut self) {
         MetricsWriter::decr_consumers_count_metric();
+
+        self.shudown_channel.blocking_send(()).unwrap();
+        
         info!("client disconnected");
     }
 }

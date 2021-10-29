@@ -20,7 +20,7 @@ impl Storage {
         }
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> i64 {
+    pub async fn push(&self, queue: &str, data: Bytes) {
         let message_id = StorageIdGenerator::generate();
         
         let message = Message::new(message_id, data);
@@ -41,8 +41,17 @@ impl Storage {
                 self.storage.insert(queue.into(), storage);
             }
         };
-
-        message_id
+    }
+    
+    pub async fn try_pop(&self, queue: &str) -> Option<Message> {  
+        match self.storage.get_mut(queue) {
+            Some(mut item) => {
+              item.data.pop_front()
+            },
+            None => {
+                None
+            }
+        }
     }
     
     pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
