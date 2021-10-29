@@ -6,19 +6,19 @@ use crate::metrics::MetricsWriter;
 use log::{info};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-pub struct MesgStreamConsumer {
+pub struct MesgConsumer {
     pub reciever: UnboundedReceiver<ConsumerItem>,
 }
 
-impl MesgStreamConsumer {
+impl MesgConsumer {
     pub fn new(reciever: UnboundedReceiver<ConsumerItem>) -> Self {
-        MesgStreamConsumer {
+        MesgConsumer {
             reciever
         }
     }
 }
 
-impl Future for MesgStreamConsumer {
+impl Future for MesgConsumer {
     type Output = ConsumerItem;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -51,7 +51,7 @@ impl Clone for ConsumerItem {
     }
 }
 
-impl Drop for MesgStreamConsumer {
+impl Drop for MesgConsumer {
     fn drop(&mut self) {
         MetricsWriter::decr_consumers_count_metric();
         info!("client disconnected");

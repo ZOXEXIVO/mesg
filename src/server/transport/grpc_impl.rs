@@ -1,7 +1,7 @@
 use std::future::Future;
 use tonic::Request;
 
-use crate::controller::MesgStreamConsumer;
+use crate::controller::MesgConsumer;
 use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel};
 use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
 use crate::server::transport::grpc::{
@@ -52,7 +52,7 @@ where
         Ok(tonic::Response::new(PushResponse { ack: result.ack }))
     }
 
-    type PullStream = InternalConsumer;
+    type PullStream = InternalStreamConsumer;
 
     async fn pull(
         &self,
@@ -62,7 +62,7 @@ where
 
         let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
 
-        let internal_consumer = InternalConsumer::new(result.consumer);
+        let internal_consumer = InternalStreamConsumer::new(result.consumer);
 
         Ok(tonic::Response::new(internal_consumer))
     }
@@ -85,28 +85,26 @@ where
     }
 }
 
-pub struct InternalConsumer {
-    pub inner_consumer: MesgStreamConsumer,
+pub struct InternalStreamConsumer {
+    pub inner_consumer: MesgConsumer,
 }
 
-impl InternalConsumer {
-    pub fn new(inner_consumer: MesgStreamConsumer) -> Self {
-        InternalConsumer { inner_consumer }
+impl InternalStreamConsumer {
+    pub fn new(inner_consumer: MesgConsumer) -> Self {
+        InternalStreamConsumer { inner_consumer }
     }
 }
 
-impl Stream for InternalConsumer {
+impl Stream for InternalStreamConsumer {
     type Item = std::result::Result<PullResponse, tonic::Status>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.inner_consumer).poll(cx) {
-            Poll::Ready(item) => {
-                Poll::Ready(Some(Ok(PullResponse {
-                    id: item.id,
-                    data: item.data.to_vec(), //TODO Allocation
-                    consumer_id: item.consumer_id,
-                })))
-            }
+            Poll::Ready(item) => Poll::Ready(Some(Ok(PullResponse {
+                id: item.id,
+                data: item.data.to_vec(),
+                consumer_id: item.consumer_id,
+            }))),
             _ => Poll::Pending,
         }
     }

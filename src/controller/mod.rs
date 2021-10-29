@@ -1,4 +1,4 @@
-pub mod controller;
+mod controller;
 pub mod consumer;
 
 pub use controller::*;

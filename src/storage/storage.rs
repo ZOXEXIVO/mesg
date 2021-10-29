@@ -61,8 +61,7 @@ impl Storage {
 
 pub struct MessageStorage {
     pub data: VecDeque<Message>,
-    pub unacked: BTreeMap<i64, Message>,
-
+    pub unacked: BTreeMap<i64, Message>
 }
 
 impl MessageStorage {

@@ -6,7 +6,7 @@ edition = "2021"
 
 
 [dependencies]
-tokio = { version = "1.12.0", features = ["full"] }
+tokio = { version = "1.13.0", features = ["full"] }
 hyper = { version = "0.14.14", features = ["full"] }
 toml = "0.5.8"
 lz4 = "1.23.2"
@@ -25,6 +25,7 @@ chashmap = "2.2.2"
 futures = "0.3.17"
 async-trait = "0.1.51"
 color-eyre = "0.5.11"
+thiserror = "1.0.30"
 
 [build-dependencies]
 tonic-build = "0.6.0"

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use crate::metrics::MetricsWriter;
-use crate::controller::{MesgController, MesgStreamConsumer};
+use crate::controller::{MesgController, MesgConsumer};
 use log::{info};
 
 #[async_trait]
@@ -72,7 +72,7 @@ pub struct PullRequestModel {
 }
 
 pub struct PullResponseModel {
-    pub consumer: MesgStreamConsumer
+    pub consumer: MesgConsumer
 }
 
 // Commit

@@ -3,10 +3,10 @@ use bytes::Bytes;
 use chashmap::{CHashMap};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use crate::storage::{Storage};
-use crate::controller::{ConsumerItem, MesgStreamConsumer};
+use crate::controller::{ConsumerItem, MesgConsumer};
 use log::{info};
-use std::error::Error;
-use std::fmt::{Debug, Formatter, Display};
+use std::fmt::{Debug};
+use thiserror::Error;
 
 pub struct MesgController {
     storage: Storage,
@@ -23,7 +23,7 @@ impl MesgController {
         }
     }
 
-    pub fn create_consumer(&self, queue: &str) -> MesgStreamConsumer {
+    pub fn create_consumer(&self, queue: &str) -> MesgConsumer {
         let (sender, reciever) = unbounded_channel();
 
         match self.consumers.get_mut(queue) {
@@ -41,7 +41,7 @@ impl MesgController {
 
         info!("consumer created for queue={}", queue);
         
-        MesgStreamConsumer::new(reciever)
+        MesgConsumer::new(reciever)
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
@@ -54,7 +54,7 @@ impl MesgController {
         self.storage.commit(queue, id, consumer_id).await;
     }
 
-    fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) -> Result<(), ConsumeError> {
+    fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) -> Result<(), ConsumingError> {
         let mut consumers_ids_to_remove = Vec::new();
     
         {
@@ -80,7 +80,7 @@ impl MesgController {
                 } else {                    
                     let next_consumer = self.router.get_next_consumer(&queue_consumer.consumers);
                     if next_consumer.is_none() {
-                        return Err(ConsumeError::from("no_consumers"));
+                        return Err(ConsumingError::NoConsumers);
                     }
 
                     let (next_consumer_id, next_consumer_channel) = next_consumer.unwrap();
@@ -169,28 +169,8 @@ impl ConsumerRouter {
     }
 }
 
-pub struct ConsumeError {
-    error_message: String
-}
-
-impl Debug for ConsumeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Consuming error: {}", self.error_message)
-    }
-}
-
-impl Display for ConsumeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Consuming error: {}", self.error_message)
-    }
-}
-
-impl Error for ConsumeError {}
-
-impl From<&str> for ConsumeError {
-    fn from(error_message: &str) -> Self {
-        ConsumeError {
-            error_message: error_message.into()
-        }
-    }
+#[derive(Error, Debug)]
+pub enum ConsumingError {
+    #[error("data store disconnected")]
+    NoConsumers,
 }
