@@ -58,7 +58,7 @@ impl Drop for MesgConsumer {
     fn drop(&mut self) {
         MetricsWriter::decr_consumers_count_metric();
 
-        self.shudown_channel.blocking_send(()).unwrap();
+        self.shudown_channel.try_send(()).unwrap();
         
         info!("client disconnected");
     }
