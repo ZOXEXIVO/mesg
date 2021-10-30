@@ -7,6 +7,7 @@ use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use chashmap::CHashMap;
+use tokio::sync::Semaphore;
 use crate::metrics::MetricsWriter;
 
 pub struct Storage {
@@ -28,25 +29,24 @@ impl Storage {
         match self.storage.get_mut(queue) {
             Some(mut item) => {
                 //TODO async
-                item.push(message);
+                item.push(message).await;
             },
             None => {
                 MetricsWriter::inc_queues_count_metric();
                 
                 let mut storage = MessageStorage::new();
 
-                //TODO async
-                storage.push(message);
+                storage.push(message).await;
 
                 self.storage.insert(queue.into(), storage);
             }
         };
     }
     
-    pub async fn try_pop(&self, queue: &str) -> Option<Message> {  
+    pub async fn pop(&self, queue: &str) -> Option<Message> {  
         match self.storage.get_mut(queue) {
             Some(mut item) => {
-              item.data.pop_front()
+              item.pop().await
             },
             None => {
                 None
@@ -68,21 +68,39 @@ impl Storage {
     }
 }
 
+impl Clone for Storage {
+    fn clone(&self) -> Self {
+        Storage {
+            storage : Arc::clone(&self.storage)
+        }
+    }
+}
+
 pub struct MessageStorage {
-    pub data: VecDeque<Message>,
-    pub unacked: BTreeMap<i64, Message>
+    data: VecDeque<Message>,   
+    unacked: BTreeMap<i64, Message>,
+    semaphore: Semaphore,
 }
 
 impl MessageStorage {
     pub fn new() -> Self {
         MessageStorage {
             data: VecDeque::new(),
-            unacked: BTreeMap::new()
+            unacked: BTreeMap::new(),
+            semaphore: Semaphore::new(1)
         }
     }
 
-    pub fn push(&mut self, message: Message)  {
+    pub async fn push(&mut self, message: Message)  {
+        let _ = self.semaphore.acquire().await.unwrap();
+
         self.data.push_back(Message::clone(&message));
+    }
+
+    pub async fn pop(&mut self) -> Option<Message> {
+        let _ = self.semaphore.acquire().await.unwrap();
+
+        self.data.pop_front()
     }
 }
 

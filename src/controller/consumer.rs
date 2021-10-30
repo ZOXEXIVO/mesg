@@ -6,7 +6,6 @@ use crate::metrics::MetricsWriter;
 use log::{info};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::Sender;
-use tokio::task::block_in_place;
 
 pub struct MesgConsumer {
     pub reciever: UnboundedReceiver<ConsumerItem>,

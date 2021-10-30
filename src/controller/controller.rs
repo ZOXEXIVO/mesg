@@ -26,6 +26,8 @@ impl MesgController {
     pub fn create_consumer(&self, queue: &str) -> MesgConsumer {
         let (sender, reciever) = unbounded_channel();
 
+        let cloned_sender = sender.clone();
+        
         match self.consumers.get_mut(queue) {
             Some(mut consumer) => {
                 consumer.add_consumer(sender);
@@ -43,13 +45,24 @@ impl MesgController {
         
         let (shutdown_sender, mut shutdown_reciever) = tokio::sync::mpsc::channel(1);
         
+        let own_storage= self.storage.clone();
+        let own_queue: String = queue.into();
+        
         tokio::spawn(async move {
             loop {
                 if shutdown_reciever.try_recv().is_ok() {
                     info!("consumer recieve shudown signal");
                     break;
                 }
-                
+
+                if let Some(msg) = own_storage.pop(&own_queue).await {
+                    info!("async queue worker message recieved");
+                    cloned_sender.send(ConsumerItem{
+                        id: msg.id,
+                        data: Bytes::clone(&msg.data),
+                        consumer_id: 0
+                    });
+                }
             }           
         });
         
