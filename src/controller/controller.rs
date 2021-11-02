@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering, AtomicU32};
+use std::sync::atomic::{Ordering, AtomicU32};
 use bytes::Bytes;
 use chashmap::{CHashMap};
 use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender};
@@ -11,7 +11,6 @@ use tokio::task::JoinHandle;
 
 pub struct MesgController {
     storage: Storage,
-    router: ConsumerRouter,
     queue_consumers: CHashMap<String, ConsumerCollection>,
 }
 
@@ -19,7 +18,6 @@ impl MesgController {
     pub fn new(storage: Storage) -> Self {
         MesgController {
             storage,
-            router: ConsumerRouter::new(),
             queue_consumers: CHashMap::new(),
         }
     }
@@ -56,66 +54,6 @@ impl MesgController {
     pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
         self.storage.commit(queue, id, consumer_id).await;
     }
-
-    // fn consume(&self, queue: &str, id: i64, data: Bytes, broadcast: bool) -> Result<(), ConsumingError> {
-    //     let mut consumers_ids_to_remove = Vec::new();
-    // 
-    //     {
-    //         if let Some(queue_consumer) = self.consumers.get(queue) {
-    //             if broadcast {
-    //                 for (consumer_id, item) in &queue_consumer.consumers {
-    //                     let consumer_item = ConsumerItem {
-    //                         id,
-    //                         data: Bytes::clone(&data),
-    //                         consumer_id: *consumer_id
-    //                     };
-    // 
-    //                     match item.send(consumer_item) {
-    //                         Ok(_) => {
-    //                             info!("broadcast: message id={}, delivered success", id);
-    //                         }
-    //                         Err(_) => {
-    //                             info!("broadcast: message id={}, delivery error", id);
-    //                             consumers_ids_to_remove.push(*consumer_id);
-    //                         }
-    //                     }
-    //                 }
-    //             } else {                    
-    //                 let next_consumer = self.router.get_next_consumer(&queue_consumer.consumers);
-    //                 if next_consumer.is_none() {
-    //                     return Err(ConsumingError::NoConsumers);
-    //                 }
-    // 
-    //                 let (next_consumer_id, next_consumer_channel) = next_consumer.unwrap();
-    // 
-    //                 let consumer_item = ConsumerItem {
-    //                     id,
-    //                     data: Bytes::clone(&data),
-    //                     consumer_id: *next_consumer_id
-    //                 };
-    //                 
-    //                 match next_consumer_channel.send(consumer_item) {
-    //                     Ok(_) => {
-    //                         info!("direct: message id={}, delivered success", id);
-    //                     }
-    //                     Err(_) => {
-    //                         info!("direct: message id={}, delivery error", id);
-    //                         consumers_ids_to_remove.push(*next_consumer_id);
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // 
-    //     // Remove
-    //     if !consumers_ids_to_remove.is_empty() {
-    //         if let Some(mut consumer) = self.consumers.get_mut(queue) {
-    //             consumer.remove_consumers(&consumers_ids_to_remove);
-    //         }
-    //     }
-    // 
-    //     Ok(())
-    // }
 }
 
 pub struct Consumer {
@@ -142,7 +80,7 @@ impl ConsumerCollection {
 
         let id = self.generator.fetch_add(1, Ordering::SeqCst);
         
-        let cloned_sender = consumer_sender.clone();
+        let consumer_channel = consumer_sender.clone();
         
         let queue_name: String = queue.into();
         
@@ -152,56 +90,34 @@ impl ConsumerCollection {
             worker_task: Some(tokio::spawn(async move {
                 loop {
                     if shutdown_reciever.try_recv().is_ok() {
-                        info!("consumer recieve shudown signal");
+                        info!("consumer recieved shutdown signal");
                         break;
                     }
 
                     if let Some(msg) = storage.pop(&queue_name).await {
-                        info!("async queue worker message recieved");
-                        cloned_sender.send(ConsumerItem{
+                        info!("consumer: {}, message recieved", id);
+                        
+                        let consumer_item = ConsumerItem{
                             id: msg.id,
                             data: Bytes::clone(&msg.data),
-                            consumer_id: 0
-                        });
+                            consumer_id: id
+                        };
+                        
+                        match consumer_channel.send(consumer_item) {
+                            Ok(_) => {
+                                info!("consumer: {}, message pushed", id);
+                            },
+                            Err(err) => {
+                                info!("consumer: {}, error while pushing message: {}", id, err);
+                                storage.push(&queue_name, err.0.data).await;
+                            }
+                        }
                     }
                 }
             }))
         });
 
         shutdown_sender
-    }
-
-    pub fn remove_consumers(&mut self, ids: &[u32]) {
-        for id in ids {
-            let idx = self.consumers.iter().position(|consumer| consumer.id == *id).unwrap();
-            self.consumers.remove(idx);
-        }
-    }
-}
-
-pub struct ConsumerRouter {
-    current_consumer: AtomicUsize
-}
-
-impl ConsumerRouter {
-    pub fn new() -> Self {
-        ConsumerRouter {
-            current_consumer: AtomicUsize::new(0)
-        }
-    }
-    
-    pub fn get_next_consumer<'c>(&self, consumers: &'c [Consumer]) -> Option<&'c Consumer> {
-        if consumers.is_empty() {
-            return None;
-        }
-        
-        let mut next_idx = self.current_consumer.fetch_add(1, Ordering::SeqCst);
-        if next_idx >= consumers.len() {
-            next_idx = 0;
-            self.current_consumer.store(0, Ordering::SeqCst);
-        }
-
-        Some(&consumers[next_idx])
     }
 }
 
