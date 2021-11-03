@@ -4,10 +4,7 @@ use chashmap::{CHashMap};
 use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender};
 use crate::storage::{Storage};
 use crate::controller::{ConsumerItem, MesgConsumer};
-use log::{info};
-use std::fmt::{Debug};
-use thiserror::Error;
-use tokio::task::JoinHandle;
+use log::{info, error};
 
 pub struct MesgController {
     storage: Storage,
@@ -48,7 +45,7 @@ impl MesgController {
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
-        self.storage.push(queue, Bytes::clone(&data)).await;
+        self.storage.push(queue, Bytes::clone(&data)).await.unwrap();
     }
 
     pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
@@ -56,22 +53,14 @@ impl MesgController {
     }
 }
 
-pub struct Consumer {
-    id: u32,
-    sender: UnboundedSender<ConsumerItem>,
-    worker_task: Option<JoinHandle<()>>
-}
-
 pub struct ConsumerCollection {
-    generator: AtomicU32,
-    pub consumers: Vec<Consumer>
+    generator: AtomicU32
 }
 
 impl ConsumerCollection {
     pub fn new() -> Self {
         ConsumerCollection {
-            generator: AtomicU32::new(0),
-            consumers: Vec::new() 
+            generator: AtomicU32::new(0)
         }
     }
 
@@ -83,46 +72,39 @@ impl ConsumerCollection {
         let consumer_channel = consumer_sender.clone();
         
         let queue_name: String = queue.into();
-        
-        self.consumers.push(Consumer {
-            id,
-            sender: consumer_sender,
-            worker_task: Some(tokio::spawn(async move {
-                loop {
-                    if shutdown_reciever.try_recv().is_ok() {
-                        info!("consumer recieved shutdown signal");
-                        break;
-                    }
 
-                    if let Some(msg) = storage.pop(&queue_name).await {
-                        info!("consumer: {}, message recieved", id);
-                        
-                        let consumer_item = ConsumerItem{
-                            id: msg.id,
-                            data: Bytes::clone(&msg.data),
-                            consumer_id: id
-                        };
-                        
-                        match consumer_channel.send(consumer_item) {
-                            Ok(_) => {
-                                info!("consumer: {}, message pushed", id);
-                            },
-                            Err(err) => {
-                                info!("consumer: {}, error while pushing message: {}", id, err);
-                                storage.push(&queue_name, err.0.data).await;
+        tokio::spawn(async move {
+            loop {
+                if shutdown_reciever.try_recv().is_ok() {
+                    info!("consumer recieved shutdown signal");
+                    break;
+                }
+
+                if let Some(msg) = storage.pop(&queue_name).await {
+                    info!("consumer: {}, message recieved", id);
+
+                    let consumer_item = ConsumerItem{
+                        id: msg.id,
+                        data: Bytes::clone(&msg.data),
+                        consumer_id: id
+                    };
+
+                    match consumer_channel.send(consumer_item) {
+                        Ok(_) => {
+                            info!("consumer: {}, message pushed", id);
+                        },
+                        Err(err) => {
+                            info!("consumer: {}, error while pushing message: {}", id, err);
+                            
+                            if let Err(err) = storage.push(&queue_name, err.0.data).await {
+                                error!("consumer: {}, push again storage error: {}", id, err);
                             }
                         }
                     }
                 }
-            }))
+            }
         });
-
+        
         shutdown_sender
     }
-}
-
-#[derive(Error, Debug)]
-pub enum ConsumingError {
-    #[error("data store disconnected")]
-    NoConsumers,
 }
