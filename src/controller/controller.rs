@@ -68,9 +68,7 @@ impl ConsumerCollection {
         let (shutdown_sender, mut shutdown_reciever) = tokio::sync::mpsc::channel(1);
 
         let id = self.generator.fetch_add(1, Ordering::SeqCst);
-        
-        let consumer_channel = consumer_sender.clone();
-        
+
         let queue_name: String = queue.into();
 
         tokio::spawn(async move {
@@ -89,7 +87,7 @@ impl ConsumerCollection {
                         consumer_id: id
                     };
 
-                    match consumer_channel.send(consumer_item) {
+                    match consumer_sender.send(consumer_item) {
                         Ok(_) => {
                             info!("consumer: {}, message pushed", id);
                         },
