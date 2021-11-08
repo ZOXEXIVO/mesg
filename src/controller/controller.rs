@@ -1,7 +1,7 @@
 use std::sync::atomic::{Ordering, AtomicU32};
 use bytes::Bytes;
 use chashmap::{CHashMap};
-use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender, Receiver, UnboundedReceiver};
 use crate::storage::{Storage};
 use crate::controller::{ConsumerItem, MesgConsumer};
 use log::{info, error};
@@ -20,28 +20,25 @@ impl MesgController {
     }
 
     pub fn create_consumer(&self, queue: &str) -> MesgConsumer {
-        let (sender, reciever) = unbounded_channel();
-
-        let cloned_storage = self.storage.clone();
-
-        let consumer_shutdown_sender = match self.queue_consumers.get_mut(queue) {
+        let consumer_handle = match self.queue_consumers.get_mut(queue) {
             Some(mut consumer) => {
-                consumer.add_consumer(cloned_storage, queue, sender)
+                consumer.add_consumer()
             }
             None => {
                 let mut consumer_collection = ConsumerCollection::new();
 
-                let consumer_shudown_sender = consumer_collection.add_consumer(cloned_storage, queue, sender);
+                let consumer_handle = consumer_collection.add_consumer();
 
                 self.queue_consumers.insert(queue.into(), consumer_collection);
 
-                consumer_shudown_sender                
+                consumer_handle
             }
         };
 
         info!("consumer created for queue={}", queue);
 
-        MesgConsumer::new(reciever, consumer_shutdown_sender)
+        MesgConsumer::new(consumer_handle.data_receiver, 
+                          consumer_handle.shutdown_sender)
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
@@ -54,55 +51,56 @@ impl MesgController {
 }
 
 pub struct ConsumerCollection {
-    generator: AtomicU32
+    generator: AtomicU32,
+    consumers: Vec<Consumer>,
 }
 
 impl ConsumerCollection {
     pub fn new() -> Self {
         ConsumerCollection {
-            generator: AtomicU32::new(0)
+            generator: AtomicU32::new(0),
+            consumers: Vec::new(),
         }
     }
 
-    pub fn add_consumer(&mut self, storage: Storage, queue: &str, consumer_sender: UnboundedSender<ConsumerItem>) -> Sender<()> {
-        let (shutdown_sender, mut shutdown_reciever) = tokio::sync::mpsc::channel(1);
+    pub fn add_consumer(&mut self) -> ConsumerHandle {
+        let id = self.generate_id();
 
-        let id = self.generator.fetch_add(1, Ordering::SeqCst);
-
-        let queue_name: String = queue.into();
-
-        tokio::spawn(async move {
-            loop {
-                if shutdown_reciever.try_recv().is_ok() {
-                    info!("consumer recieved shutdown signal");
-                    break;
-                }
-
-                if let Some(msg) = storage.pop(&queue_name).await {
-                    info!("consumer: {}, message recieved", id);
-
-                    let consumer_item = ConsumerItem{
-                        id: msg.id,
-                        data: Bytes::clone(&msg.data),
-                        consumer_id: id
-                    };
-
-                    match consumer_sender.send(consumer_item) {
-                        Ok(_) => {
-                            info!("consumer: {}, message pushed", id);
-                        },
-                        Err(err) => {
-                            info!("consumer: {}, error while pushing message: {}", id, err);
-                            
-                            if let Err(err) = storage.push(&queue_name, err.0.data).await {
-                                error!("consumer: {}, push again storage error: {}", id, err);
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        let (consumer_data_sender, consumer_data_receiver) = unbounded_channel();
+        let (shutdown_sender, shutdown_receiver) = tokio::sync::mpsc::channel(1);
         
-        shutdown_sender
+        let consumer = Consumer::new(id, consumer_data_sender, shutdown_receiver);
+
+        self.consumers.push(consumer);
+        
+        ConsumerHandle {
+            data_receiver: consumer_data_receiver,
+            shutdown_sender
+        }
     }
+
+    fn generate_id(&self) -> u32 {
+        self.generator.fetch_add(1, Ordering::SeqCst)
+    }
+}
+
+pub struct Consumer {
+    id: u32,
+    send_channel: UnboundedSender<ConsumerItem>,
+    shutdown_receiver: Receiver<()>,
+}
+
+impl Consumer {
+    pub fn new(id: u32, send_channel: UnboundedSender<ConsumerItem>, shutdown_receiver: Receiver<()>) -> Self {
+        Consumer {
+            id,
+            send_channel,
+            shutdown_receiver,
+        }
+    }
+}
+
+pub struct ConsumerHandle {
+    data_receiver: UnboundedReceiver<ConsumerItem>,
+    shutdown_sender: Sender<()>,
 }
