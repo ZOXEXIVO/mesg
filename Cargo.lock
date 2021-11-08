@@ -626,7 +626,6 @@ dependencies = [
  "log",
  "lz4",
  "oneshot",
- "parking_lot 0.11.2",
  "prost",
  "serde",
  "thiserror",

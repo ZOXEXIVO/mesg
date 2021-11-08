@@ -41,7 +41,7 @@ impl Mesg for MesgService {
         info!("consumer connected: queue: {}", &request.queue);
         
         PullResponseModel{
-            consumer: self.controller.create_consumer(&request.queue)
+            consumer: self.controller.create_consumer(&request.queue).await
         }
     }
 

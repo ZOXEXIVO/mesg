@@ -3,18 +3,20 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use bytes::Bytes;
 use crate::metrics::MetricsWriter;
-use log::{info};
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::mpsc::Sender;
+use log::{info, error};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use crate::controller::ConsumerHandle;
 
 pub struct MesgConsumer {
+    pub id: u32,
     pub reciever: UnboundedReceiver<ConsumerItem>,
-    pub shudown_channel: Sender<()>
+    pub shudown_channel: UnboundedSender<u32>
 }
 
 impl MesgConsumer {
-    pub fn new(reciever: UnboundedReceiver<ConsumerItem>, shudown_channel: Sender<()>) -> Self {
+    pub fn new(id: u32, reciever: UnboundedReceiver<ConsumerItem>, shudown_channel: UnboundedSender<u32>) -> Self {
         MesgConsumer {
+            id,
             reciever,
             shudown_channel
         }
@@ -38,6 +40,12 @@ impl Future for MesgConsumer {
     }
 }
 
+impl From<ConsumerHandle> for MesgConsumer {
+    fn from(handle: ConsumerHandle) -> Self {
+        MesgConsumer::new(handle.id, handle.data_receiver,handle.shutdown_sender)
+    }
+}
+
 pub struct ConsumerItem {
     pub id: i64,
     pub data: Bytes,
@@ -58,8 +66,12 @@ impl Drop for MesgConsumer {
     fn drop(&mut self) {
         MetricsWriter::decr_consumers_count_metric();
 
-        self.shudown_channel.try_send(());
+        info!("send shutdown message for consumer_id={}", self.id);
         
-        info!("client disconnected");
+        if let Err(err) = self.shudown_channel.send(self.id) {
+            error!("error sending shutdown message to consumer_id={}, error={}", self.id, err);
+        }
+        
+        info!("consumer disconnected");
     }
 }
