@@ -17,6 +17,7 @@ use crate::storage::Storage;
 use crate::controller::MesgController;
 
 pub use crate::server::transport::grpc::PullResponse;
+use std::sync::Arc;
 
 pub struct MesgServerOptions {
     pub db_path: String,
@@ -26,7 +27,7 @@ pub struct MesgServerOptions {
 
 pub struct MesgServer {
     cluster: Cluster,
-
+    storage: Option<Arc<Storage>>,
     metrics_server_thread: Option<JoinHandle<()>>,
 }
 
@@ -34,6 +35,7 @@ impl MesgServer {
     pub fn new() -> Self {
         MesgServer {
             cluster: Cluster::new(),
+            storage: None,
             metrics_server_thread: None,
         }
     }
@@ -47,7 +49,11 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        let controller = MesgController::new(Storage::new());
+        self.storage = Some(Arc::new(Storage::new()));
+        
+        let cloned_storage = Arc::clone(&self.storage.as_ref().unwrap());
+        
+        let controller = MesgController::new(cloned_storage);
         
         let service = MesgService::new(controller);
         

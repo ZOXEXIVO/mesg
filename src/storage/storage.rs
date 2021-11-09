@@ -7,9 +7,10 @@ use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::{AcquireError, Semaphore, SemaphorePermit};
+use tokio::sync::{AcquireError, Semaphore, SemaphorePermit, Notify};
 use crate::metrics::MetricsWriter;
 use thiserror::Error;
+use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel, channel, Sender, Receiver};
 
 pub struct Storage {
     storage: Arc<CHashMap<String, MessageStorage>>
@@ -22,7 +23,7 @@ impl Storage {
         }
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> Result<(), StorageError> {
+    pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) -> Result<(), StorageError> {
         let message_id = StorageIdGenerator::generate();
         
         let message = Message::new(message_id, data);
@@ -30,6 +31,7 @@ impl Storage {
         match self.storage.get_mut(queue) {
             Some(mut item) => {
                 item.push(message).await?;
+                //item.notify.
             },
             None => {
                 MetricsWriter::inc_queues_count_metric();
@@ -71,6 +73,14 @@ impl Storage {
             }
         };
     }
+    
+    pub async fn get_queue_notify(&self, queue: &str) -> Option<Receiver<()>>{
+        if let Some(item) = self.storage.get_mut(queue) {
+            return Some(item.get_notify().await);
+        }
+        
+        None
+    }
 }
 
 impl Clone for Storage {
@@ -97,6 +107,7 @@ pub struct MessageStorage {
     data: VecDeque<Message>,   
     unacked: BTreeMap<i64, Message>,
     semaphore: Semaphore,
+    notify: (Sender<()>, Receiver<()>)
 }
 
 impl MessageStorage {
@@ -104,7 +115,8 @@ impl MessageStorage {
         MessageStorage {
             data: VecDeque::new(),
             unacked: BTreeMap::new(),
-            semaphore: Semaphore::new(1)
+            semaphore: Semaphore::new(1),
+            notify: channel(1024)
         }
     }
 
@@ -112,7 +124,11 @@ impl MessageStorage {
         let _ = self.semaphore.acquire().await?;
 
         self.data.push_back(Message::clone(&message));
+        
+        let (sender, _) = &self.notify;
 
+        sender.send(()).await;
+        
         Ok(())
     }
 
@@ -120,6 +136,11 @@ impl MessageStorage {
         let _ = self.semaphore.acquire().await?;
         
         Ok(self.data.pop_front())
+    }
+    
+    pub async fn get_notify(&self) -> Receiver<()> {
+        let (_, mut receiver) = &self.notify;
+        receiver()
     }
 }
 
