@@ -65,11 +65,11 @@ impl Storage {
         match self.storage.get_mut(queue) {
             Some(mut guard) => {
                 if let Some(_item) = guard.unacked.remove_entry(&id) {
-                    info!("commited: queue={}, message_id={}, consumer_id={}", queue, &id, consumer_id);
+                    info!("commited: message_id={}, queue={}, application={}", id, queue, application);
                 }
             },
             None => {
-                warn!("commit failed: queue={}, message_id={}, consumer_id={}", queue, &id, consumer_id);
+                warn!("commit failed: message_id={}, queue={}, application={}", id, queue, application);
             }
         };
     }

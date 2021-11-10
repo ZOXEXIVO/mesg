@@ -48,7 +48,6 @@ impl Mesg for MesgService {
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
         self.controller.commit(request.id, &request.queue, &request.application).await;
 
-        let s = m
         MetricsWriter::inc_commit_metric();
 
         CommitResponseModel {}
