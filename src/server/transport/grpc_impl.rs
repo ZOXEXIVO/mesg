@@ -14,15 +14,15 @@ use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
 
 pub struct MesgGrpcImplService<T: Mesg>
-    where
-        T: Send + Sync + 'static,
+where
+    T: Send + Sync + 'static,
 {
     inner: T,
 }
 
 impl<'g, T: Mesg> MesgGrpcImplService<T>
-    where
-        T: Send + Sync + 'static,
+where
+    T: Send + Sync + 'static,
 {
     pub fn new(inner: T) -> Self {
         Self { inner }
@@ -31,8 +31,8 @@ impl<'g, T: Mesg> MesgGrpcImplService<T>
 
 #[tonic::async_trait]
 impl<T: Mesg> MesgProtocol for MesgGrpcImplService<T>
-    where
-        T: Send + Sync + 'static,
+where
+    T: Send + Sync + 'static,
 {
     async fn push(
         &self,
@@ -60,10 +60,13 @@ impl<T: Mesg> MesgProtocol for MesgGrpcImplService<T>
     ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
-        let result = self.inner.pull(PullRequestModel {
-            queue: req.queue,
-            application: req.application,
-        }).await;
+        let result = self
+            .inner
+            .pull(PullRequestModel {
+                queue: req.queue,
+                application: req.application,
+            })
+            .await;
 
         let internal_consumer = InternalStreamConsumer::new(result.consumer);
 

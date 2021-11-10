@@ -23,7 +23,7 @@ impl MesgController {
 
     pub async fn create_consumer(&self, queue: &str, application: &str) -> MesgConsumer {
         let storage = Arc::clone(&self.storage);
-        
+
         let consumer_handle = match self.queue_consumers.get_mut(queue) {
             Some(mut consumer) => {
                 consumer.add_consumer(storage).await
@@ -49,7 +49,7 @@ impl MesgController {
     }
 
     pub async fn commit(&self, id: i64, queue: &str, application: &str) {
-        self.storage.commit(queue, id, consumer_id).await;
+        self.storage.commit(id, queue, application).await;
     }
 }
 
@@ -73,9 +73,9 @@ impl ConsumerCollection {
 
         // Run shutdown waiter
         Self::shutdown_waiter_start(Arc::clone(&consumers.consumers), receiver);
-        
+
         let notification = ConsumerAddedNotification::new();
-        
+
         // Run consuming task
         consumers.coordinator.start(Arc::clone(&consumers.consumers), notification);
 
@@ -104,7 +104,7 @@ impl ConsumerCollection {
     fn generate_id(&self) -> u32 {
         self.generator.fetch_add(1, Ordering::SeqCst)
     }
-    
+
     fn shutdown_waiter_start(consumers: Arc<Mutex<Vec<Consumer>>>, mut receiver: UnboundedReceiver<u32>) {
         tokio::spawn(async move {
             while let Some(consumer_id_to_remove) = receiver.recv().await {
@@ -146,14 +146,10 @@ pub struct ConsumerHandle {
     pub shutdown_sender: UnboundedSender<u32>,
 }
 
-pub struct ConsumerAddedNotification {
-    
-}
+pub struct ConsumerAddedNotification {}
 
 impl ConsumerAddedNotification {
     pub fn new() -> Self {
-        ConsumerAddedNotification {
-            
-        }
+        ConsumerAddedNotification {}
     }
 }
