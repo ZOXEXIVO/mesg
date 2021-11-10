@@ -12,11 +12,11 @@ impl ConsumerCoordinator {
     pub fn start(&self, consumers: Arc<Mutex<Vec<Consumer>>>, notification: ConsumerAddedNotification) {
         tokio::spawn(async move {
             loop {
-                let queue_consumer = notification.get_next_consumer().await;
+                //let queue_consumer = notification.get_next_consumer().await;
                 
-                tokio::spawn(async move {
-                    self.consumer_worker(queue_consumer).await
-                })
+                // tokio::spawn(async move {
+                //     self.consumer_worker(queue_consumer).await
+                // })
             }
         });
     }

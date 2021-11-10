@@ -73,8 +73,11 @@ impl ConsumerCollection {
 
         // Run shutdown waiter
         Self::shutdown_waiter_start(Arc::clone(&consumers.consumers), receiver);
+        
+        let notification = ConsumerAddedNotification::new();
+        
         // Run consuming task
-        consumers.coordinator.start(Arc::clone(&consumers.consumers));
+        consumers.coordinator.start(Arc::clone(&consumers.consumers), notification);
 
         consumers
     }
@@ -152,9 +155,5 @@ impl ConsumerAddedNotification {
         ConsumerAddedNotification {
             
         }
-    }
-    
-    pub async fn get_next_consumer(&self) -> String {
-        
     }
 }

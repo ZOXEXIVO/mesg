@@ -18,8 +18,8 @@ pub struct PushResponse {
 pub struct PullRequest {
     #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(int32, tag = "2")]
-    pub invisibility_ms: i32,
+    #[prost(string, tag = "2")]
+    pub machine_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
@@ -36,9 +36,11 @@ pub struct PullResponse {
 pub struct CommitRequest {
     #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(int64, tag = "2")]
+    #[prost(string, tag = "2")]
+    pub machine_name: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
     pub id: i64,
-    #[prost(uint32, tag = "3")]
+    #[prost(uint32, tag = "4")]
     pub consumer_id: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -7,10 +7,10 @@ use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
 use chashmap::CHashMap;
-use tokio::sync::{AcquireError, Semaphore, SemaphorePermit, Notify};
+use tokio::sync::{AcquireError, Semaphore};
 use crate::metrics::MetricsWriter;
 use thiserror::Error;
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel, channel, Sender, Receiver};
+use tokio::sync::mpsc::{channel, Sender, Receiver};
 
 pub struct Storage {
     storage: Arc<CHashMap<String, MessageStorage>>
@@ -73,14 +73,6 @@ impl Storage {
             }
         };
     }
-    
-    pub async fn get_queue_notify(&self, queue: &str) -> Option<Receiver<()>>{
-        if let Some(item) = self.storage.get_mut(queue) {
-            return Some(item.get_notify().await);
-        }
-        
-        None
-    }
 }
 
 impl Clone for Storage {
@@ -136,11 +128,6 @@ impl MessageStorage {
         let _ = self.semaphore.acquire().await?;
         
         Ok(self.data.pop_front())
-    }
-    
-    pub async fn get_notify(&self) -> Receiver<()> {
-        let (_, mut receiver) = &self.notify;
-        receiver()
     }
 }
 

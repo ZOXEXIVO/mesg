@@ -22,7 +22,7 @@ message PushResponse {
 // Pull
 message PullRequest {
   string queue = 1;
-  int32 invisibility_ms = 2;
+  string machine_name = 2;
 }
 
 message PullResponse {
@@ -35,8 +35,9 @@ message PullResponse {
 
 message CommitRequest {
   string queue = 1;
-  int64 id = 2;
-  uint32 consumer_id = 3;
+  string machine_name = 2;
+  int64 id = 3;
+  uint32 consumer_id = 4;
 }
 
 message CommitResponse {}
