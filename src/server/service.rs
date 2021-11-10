@@ -12,7 +12,7 @@ pub trait Mesg {
 }
 
 pub struct MesgService {
-    controller: MesgController
+    controller: MesgController,
 }
 
 impl MesgService {
@@ -39,15 +39,16 @@ impl Mesg for MesgService {
         MetricsWriter::inc_consumers_count_metric();
 
         info!("consumer connected: queue: {}", &request.queue);
-        
-        PullResponseModel{
-            consumer: self.controller.create_consumer(&request.queue).await
+
+        PullResponseModel {
+            consumer: self.controller.create_consumer(&request.queue, &request.application).await
         }
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.controller.commit(&request.queue, request.id, request.consumer_id).await;
+        self.controller.commit(request.id, &request.queue, &request.application).await;
 
+        let s = m
         MetricsWriter::inc_commit_metric();
 
         CommitResponseModel {}
@@ -58,7 +59,7 @@ impl Mesg for MesgService {
 pub struct PushRequestModel {
     pub queue: String,
     pub data: Bytes,
-    pub broadcast: bool
+    pub broadcast: bool,
 }
 
 pub struct PushResponseModel {
@@ -69,18 +70,19 @@ pub struct PushResponseModel {
 
 pub struct PullRequestModel {
     pub queue: String,
+    pub application: String,
 }
 
 pub struct PullResponseModel {
-    pub consumer: MesgConsumer
+    pub consumer: MesgConsumer,
 }
 
 // Commit
 
 pub struct CommitRequestModel {
-    pub queue: String,
     pub id: i64,
-    pub consumer_id: u32,
+    pub queue: String,
+    pub application: String,
 }
 
 pub struct CommitResponseModel {}

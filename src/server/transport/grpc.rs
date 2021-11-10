@@ -19,7 +19,7 @@ pub struct PullRequest {
     #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub machine_name: ::prost::alloc::string::String,
+    pub application: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
@@ -27,21 +27,17 @@ pub struct PullResponse {
     pub id: i64,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "3")]
-    pub consumer_id: u32,
 }
 // Commit
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
-    #[prost(string, tag = "1")]
-    pub queue: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub machine_name: ::prost::alloc::string::String,
-    #[prost(int64, tag = "3")]
+    #[prost(int64, tag = "1")]
     pub id: i64,
-    #[prost(uint32, tag = "4")]
-    pub consumer_id: u32,
+    #[prost(string, tag = "2")]
+    pub queue: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub application: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {}

@@ -48,15 +48,13 @@ impl From<ConsumerHandle> for MesgConsumer {
 
 pub struct ConsumerItem {
     pub id: i64,
-    pub data: Bytes,
-    pub consumer_id: u32,
+    pub data: Bytes
 }
 
 impl Clone for ConsumerItem {
     fn clone(&self) -> Self {
         ConsumerItem {
-            id: self.id, 
-            consumer_id: self.consumer_id,
+            id: self.id,
             data: Bytes::clone(&self.data),
         }
     }

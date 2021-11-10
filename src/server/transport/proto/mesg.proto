@@ -22,22 +22,21 @@ message PushResponse {
 // Pull
 message PullRequest {
   string queue = 1;
-  string machine_name = 2;
+  string application = 2;
 }
 
 message PullResponse {
   int64 id = 1;
   bytes data = 2;
-  uint32 consumer_id = 3;  
 }
 
 // Commit 
 
 message CommitRequest {
-  string queue = 1;
-  string machine_name = 2;
-  int64 id = 3;
-  uint32 consumer_id = 4;
+  int64 id = 1;
+  
+  string queue = 2;
+  string application = 3;
 }
 
 message CommitResponse {}

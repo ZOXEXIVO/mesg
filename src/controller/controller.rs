@@ -21,7 +21,7 @@ impl MesgController {
         }
     }
 
-    pub async fn create_consumer(&self, queue: &str) -> MesgConsumer {
+    pub async fn create_consumer(&self, queue: &str, application: &str) -> MesgConsumer {
         let storage = Arc::clone(&self.storage);
         
         let consumer_handle = match self.queue_consumers.get_mut(queue) {
@@ -48,7 +48,7 @@ impl MesgController {
         self.storage.push(queue, Bytes::clone(&data), broadcast).await.unwrap();
     }
 
-    pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
+    pub async fn commit(&self, id: i64, queue: &str, application: &str) {
         self.storage.commit(queue, id, consumer_id).await;
     }
 }

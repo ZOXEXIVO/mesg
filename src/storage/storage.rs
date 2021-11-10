@@ -61,7 +61,7 @@ impl Storage {
         }
     }
     
-    pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
+    pub async fn commit(&self, id: i64, queue: &str, application: &str) {
         match self.storage.get_mut(queue) {
             Some(mut guard) => {
                 if let Some(_item) = guard.unacked.remove_entry(&id) {

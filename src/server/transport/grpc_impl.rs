@@ -14,15 +14,15 @@ use std::task::{Context, Poll};
 use tonic::codegen::futures_core::Stream;
 
 pub struct MesgGrpcImplService<T: Mesg>
-where
-    T: Send + Sync + 'static,
+    where
+        T: Send + Sync + 'static,
 {
     inner: T,
 }
 
 impl<'g, T: Mesg> MesgGrpcImplService<T>
-where
-    T: Send + Sync + 'static,
+    where
+        T: Send + Sync + 'static,
 {
     pub fn new(inner: T) -> Self {
         Self { inner }
@@ -31,8 +31,8 @@ where
 
 #[tonic::async_trait]
 impl<T: Mesg> MesgProtocol for MesgGrpcImplService<T>
-where
-    T: Send + Sync + 'static,
+    where
+        T: Send + Sync + 'static,
 {
     async fn push(
         &self,
@@ -60,7 +60,10 @@ where
     ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
-        let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
+        let result = self.inner.pull(PullRequestModel {
+            queue: req.queue,
+            application: req.application,
+        }).await;
 
         let internal_consumer = InternalStreamConsumer::new(result.consumer);
 
@@ -75,9 +78,9 @@ where
 
         self.inner
             .commit(CommitRequestModel {
-                queue: req.queue,
                 id: req.id,
-                consumer_id: req.consumer_id,
+                queue: req.queue,
+                application: req.application,
             })
             .await;
 
@@ -103,7 +106,6 @@ impl Stream for InternalStreamConsumer {
             Poll::Ready(item) => Poll::Ready(Some(Ok(PullResponse {
                 id: item.id,
                 data: item.data.to_vec(),
-                consumer_id: item.consumer_id,
             }))),
             _ => Poll::Pending,
         }
