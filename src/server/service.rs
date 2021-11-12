@@ -26,7 +26,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.controller.push(&request.queue, request.data, request.broadcast).await;
+        self.controller.push(&request.queue, request.data).await;
 
         MetricsWriter::inc_push_metric();
 
@@ -46,19 +46,18 @@ impl Mesg for MesgService {
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.controller.commit(request.id, &request.queue, &request.application).await;
-
         MetricsWriter::inc_commit_metric();
 
-        CommitResponseModel {}
+        CommitResponseModel {
+            success: self.controller.commit(request.id, &request.queue, &request.application).await
+        }
     }
 }
 
 // Push
 pub struct PushRequestModel {
     pub queue: String,
-    pub data: Bytes,
-    pub broadcast: bool,
+    pub data: Bytes
 }
 
 pub struct PushResponseModel {
@@ -84,4 +83,6 @@ pub struct CommitRequestModel {
     pub application: String,
 }
 
-pub struct CommitResponseModel {}
+pub struct CommitResponseModel {
+    pub success: bool
+}

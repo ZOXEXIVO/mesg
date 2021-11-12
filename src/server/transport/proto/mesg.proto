@@ -12,7 +12,6 @@ service MesgProtocol {
 message PushRequest {
   string queue = 1;
   bytes data = 2;
-  bool broadcast = 3;
 }
 
 message PushResponse {
@@ -39,4 +38,6 @@ message CommitRequest {
   string application = 3;
 }
 
-message CommitResponse {}
+message CommitResponse {
+  bool success = 1;
+}

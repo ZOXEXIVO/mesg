@@ -22,6 +22,10 @@ impl MesgController {
     }
 
     pub async fn create_consumer(&self, queue: &str, application: &str) -> MesgConsumer {
+        if !self.storage.is_subqueue_exists(queue, application).await {
+            self.storage.create_subqueue(queue, application).await;
+        }
+        
         let storage = Arc::clone(&self.storage);
 
         let consumer_handle = match self.queue_consumers.get_mut(queue) {
@@ -44,12 +48,12 @@ impl MesgController {
         MesgConsumer::from(consumer_handle)
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
-        self.storage.push(queue, Bytes::clone(&data), broadcast).await.unwrap();
+    pub async fn push(&self, queue: &str, data: Bytes) {
+        self.storage.push(queue, Bytes::clone(&data)).await.unwrap();
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str) {
-        self.storage.commit(id, queue, application).await;
+    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
+        self.storage.commit(id, queue, application).await
     }
 }
 

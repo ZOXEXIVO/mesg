@@ -5,8 +5,6 @@ pub struct PushRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag = "3")]
-    pub broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
@@ -40,7 +38,10 @@ pub struct CommitRequest {
     pub application: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CommitResponse {}
+pub struct CommitResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+}
 #[doc = r" Generated server implementations."]
 pub mod mesg_protocol_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]

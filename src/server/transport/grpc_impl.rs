@@ -45,7 +45,6 @@ where
             .push(PushRequestModel {
                 queue: message.queue,
                 data: Bytes::copy_from_slice(&message.data),
-                broadcast: message.broadcast,
             })
             .await;
 
@@ -60,7 +59,7 @@ where
     ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
-        let result = self
+        let pull_response = self
             .inner
             .pull(PullRequestModel {
                 queue: req.queue,
@@ -68,9 +67,9 @@ where
             })
             .await;
 
-        let internal_consumer = InternalStreamConsumer::new(result.consumer);
-
-        Ok(tonic::Response::new(internal_consumer))
+        Ok(tonic::Response::new(InternalStreamConsumer::new(
+            pull_response.consumer,
+        )))
     }
 
     async fn commit(
@@ -79,7 +78,8 @@ where
     ) -> std::result::Result<tonic::Response<CommitResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        self.inner
+        let commit_response = self
+            .inner
             .commit(CommitRequestModel {
                 id: req.id,
                 queue: req.queue,
@@ -87,7 +87,9 @@ where
             })
             .await;
 
-        Ok(tonic::Response::new(CommitResponse {}))
+        Ok(tonic::Response::new(CommitResponse {
+            success: commit_response.success,
+        }))
     }
 }
 

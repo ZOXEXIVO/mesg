@@ -69,7 +69,7 @@ impl Drop for MesgConsumer {
         if let Err(err) = self.shudown_channel.send(self.id) {
             error!("error sending shutdown message to consumer_id={}, error={}", self.id, err);
         }
-        
+
         info!("consumer disconnected");
     }
 }
