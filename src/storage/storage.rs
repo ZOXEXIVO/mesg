@@ -23,28 +23,26 @@ impl Storage {
         }
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> Result<(), StorageError> {
+    pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
         let message_id = StorageIdGenerator::generate();
         
         let message = Message::new(message_id, data);
               
         match self.storage.get_mut(queue) {
             Some(mut item) => {
-                item.push(message).await?;
-                //item.notify.
+                Ok(item.push(message).await?)
             },
             None => {
                 MetricsWriter::inc_queues_count_metric();
                 
-                let mut storage = MessageStorage::new();
-
-                storage.push(message).await?;
+                // create queue storage, but not push message to it                
+                let storage = MessageStorage::new();
 
                 self.storage.insert(queue.into(), storage);
+                
+                Ok(false)
             }
-        };
-        
-        Ok(())
+        }
     }
     
     pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {  
@@ -98,9 +96,6 @@ pub enum StorageError {
 
 
 // Message storage
-
-type MessageStoragePushResult = Result<(), MessageStorageError>;
-
 pub struct MessageStorage {
     sub_queues: Mutex<HashMap<String, VecDeque<Message>>>,
     unacked: BTreeMap<i64, Message>,
@@ -116,18 +111,21 @@ impl MessageStorage {
         }
     }
 
-    pub async fn push(&mut self, message: Message) -> MessageStoragePushResult {
+    pub async fn push(&mut self, message: Message) -> Result<bool, MessageStorageError> {
         let mut guard = self.sub_queues.lock().await;
 
-        let keys: Vec<String> = guard.keys().map(|k| String::from(k)).collect();
+        let keys: Vec<String> = guard.keys().map(String::from).collect();
 
+        let mut is_ok = false;
+        
         for app_queue_key in &keys {
             if let Some(app_queue) = guard.get_mut(app_queue_key) {
                 app_queue.push_back(Message::clone(&message));
+                is_ok = true;
             }
         }
 
-        Ok(())
+        Ok(is_ok)
     }
 
     pub async fn pop(&mut self, application: &str) -> Result<Option<Message>, MessageStorageError> {

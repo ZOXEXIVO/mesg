@@ -48,7 +48,9 @@ where
             })
             .await;
 
-        Ok(tonic::Response::new(PushResponse { ack: result.ack }))
+        Ok(tonic::Response::new(PushResponse {
+            success: result.success,
+        }))
     }
 
     type PullStream = InternalStreamConsumer;

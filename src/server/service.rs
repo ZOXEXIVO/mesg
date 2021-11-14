@@ -26,12 +26,10 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.controller.push(&request.queue, request.data).await;
-
         MetricsWriter::inc_push_metric();
 
         PushResponseModel {
-            ack: true
+            success:  self.controller.push(&request.queue, request.data).await
         }
     }
 
@@ -61,7 +59,7 @@ pub struct PushRequestModel {
 }
 
 pub struct PushResponseModel {
-    pub ack: bool,
+    pub success: bool,
 }
 
 // Pull

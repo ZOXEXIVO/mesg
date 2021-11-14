@@ -9,7 +9,7 @@ pub struct PushRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
     #[prost(bool, tag = "1")]
-    pub ack: bool,
+    pub success: bool,
 }
 /// Pull
 #[derive(Clone, PartialEq, ::prost::Message)]

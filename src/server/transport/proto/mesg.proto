@@ -15,7 +15,7 @@ message PushRequest {
 }
 
 message PushResponse {
-  bool ack = 1;
+  bool success = 1;
 }
 
 // Pull
