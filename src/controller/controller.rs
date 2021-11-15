@@ -22,8 +22,8 @@ impl MesgController {
     }
 
     pub async fn create_consumer(&self, queue: &str, application: &str) -> MesgConsumer {
-        if !self.storage.is_subqueue_exists(queue, application).await {
-            self.storage.create_subqueue(queue, application).await;
+        if !self.storage.is_application_queue_exists(queue, application).await {
+            self.storage.create_application_queue(queue, application).await;
         }
         
         let storage = Arc::clone(&self.storage);

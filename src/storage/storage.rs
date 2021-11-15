@@ -59,17 +59,17 @@ impl Storage {
         }
     }
 
-    pub async fn is_subqueue_exists(&self, queue: &str, application: &str) -> bool {
+    pub async fn is_application_queue_exists(&self, queue: &str, application: &str) -> bool {
         if let Some(storage) = self.storage.get(queue) {
-            return storage.is_subqueue_exists(application).await;
+            return storage.is_application_exists(application).await;
         }
 
         false
     }
     
-    pub async fn create_subqueue(&self, queue: &str, application: &str) -> bool {
+    pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
         if let Some(storage) = self.storage.get_mut(queue) {
-            return storage.create_subqueue(application).await;
+            return storage.create_application_queue(application).await;
         }
         
         false        
@@ -97,7 +97,7 @@ pub enum StorageError {
 
 // Message storage
 pub struct MessageStorage {
-    sub_queues: Mutex<HashMap<String, VecDeque<Message>>>,
+    application_queues: Mutex<HashMap<String, VecDeque<Message>>>,
     unacked: BTreeMap<i64, Message>,
     notify: (Sender<()>, Receiver<()>)
 }
@@ -105,14 +105,14 @@ pub struct MessageStorage {
 impl MessageStorage {
     pub fn new() -> Self {
         MessageStorage {
-            sub_queues: Mutex::new(HashMap::new()),
+            application_queues: Mutex::new(HashMap::new()),
             unacked: BTreeMap::new(),
             notify: channel(1024)
         }
     }
 
     pub async fn push(&mut self, message: Message) -> Result<bool, MessageStorageError> {
-        let mut guard = self.sub_queues.lock().await;
+        let mut guard = self.application_queues.lock().await;
 
         let keys: Vec<String> = guard.keys().map(String::from).collect();
 
@@ -129,7 +129,7 @@ impl MessageStorage {
     }
 
     pub async fn pop(&mut self, application: &str) -> Result<Option<Message>, MessageStorageError> {
-        let mut guard = self.sub_queues.lock().await;
+        let mut guard = self.application_queues.lock().await;
         
         match guard.get_mut(application) {
             Some(application_queue) => {
@@ -139,14 +139,14 @@ impl MessageStorage {
         }
     }
 
-    pub async fn is_subqueue_exists(&self, application: &str) -> bool {
-        let guard = self.sub_queues.lock().await;
+    pub async fn is_application_exists(&self, application: &str) -> bool {
+        let guard = self.application_queues.lock().await;
 
         guard.contains_key(application)
     }
     
-    pub async fn create_subqueue(&self, application: &str) -> bool {
-        let mut guard = self.sub_queues.lock().await;
+    pub async fn create_application_queue(&self, application: &str) -> bool {
+        let mut guard = self.application_queues.lock().await;
         
         if !guard.contains_key(application) {
             guard.insert(application.into(), VecDeque::new());
