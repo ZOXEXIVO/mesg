@@ -47,22 +47,22 @@ pub struct ConsumerCollection {
     generator: AtomicU32,
     consumers: Arc<Mutex<Vec<Consumer>>>,
     coordinator: ConsumerCoordinator,
-    shutdown_channel: UnboundedSender<u32>,
+    shutdown_tx: UnboundedSender<u32>,
 }
 
 impl ConsumerCollection {
     pub fn new() -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let consumers = ConsumerCollection {
             generator: AtomicU32::new(0),
             consumers: Arc::new(Mutex::new(Vec::new())),
             coordinator: ConsumerCoordinator::new(),
-            shutdown_channel: sender,
+            shutdown_tx,
         };
 
         // Run shutdown waiter
-        Self::shutdown_waiter_start(Arc::clone(&consumers.consumers), receiver);
+        Self::wait_shutdown(Arc::clone(&consumers.consumers), shutdown_rx);
 
         let notification = ConsumerAddedNotification::new();
 
@@ -73,7 +73,7 @@ impl ConsumerCollection {
     }
 
     pub async fn add_consumer(&self, storage: Arc<Storage>) -> ConsumerHandle {
-        let (consumer_data_sender, consumer_data_receiver) = unbounded_channel();
+        let (consumer_data_tx, consumer_data_rx) = unbounded_channel();
 
         let consumer_id = self.generate_id();
 
@@ -81,13 +81,13 @@ impl ConsumerCollection {
 
         consumers.push(Consumer::new(consumer_id,
                                      Arc::clone(&storage),
-                                     consumer_data_sender)
+                                     consumer_data_tx)
         );
 
         ConsumerHandle {
             id: consumer_id,
-            data_receiver: consumer_data_receiver,
-            shutdown_sender: self.shutdown_channel.clone(),
+            data_rx: consumer_data_rx,
+            shutdown_tx: self.shutdown_tx.clone(),
         }
     }
 
@@ -95,11 +95,12 @@ impl ConsumerCollection {
         self.generator.fetch_add(1, Ordering::SeqCst)
     }
 
-    fn shutdown_waiter_start(consumers: Arc<Mutex<Vec<Consumer>>>, mut receiver: UnboundedReceiver<u32>) {
-        info!("shudown waiter starterd");
+    // waiting consumers shutdown
+    fn wait_shutdown(consumers: Arc<Mutex<Vec<Consumer>>>, mut shutdown_rx: UnboundedReceiver<u32>) {
+        info!("shudown waiter started");
         
         tokio::spawn(async move {
-            while let Some(consumer_id_to_remove) = receiver.recv().await {
+            while let Some(consumer_id_to_remove) = shutdown_rx.recv().await {
                 let mut consumers_guard = consumers.lock().await;
 
                 match consumers_guard.iter().position(|c| c.id == consumer_id_to_remove) {
@@ -119,23 +120,24 @@ impl ConsumerCollection {
 pub struct Consumer {
     id: u32,
     storage: Arc<Storage>,
-    channel: UnboundedSender<ConsumerItem>,
+    data_tx: UnboundedSender<ConsumerItem>,
+    
 }
 
 impl Consumer {
-    pub fn new(id: u32, storage: Arc<Storage>, channel: UnboundedSender<ConsumerItem>) -> Self {
+    pub fn new(id: u32, storage: Arc<Storage>, data_tx: UnboundedSender<ConsumerItem>) -> Self {
         Consumer {
             id,
             storage,
-            channel,
+            data_tx,
         }
     }
 }
 
 pub struct ConsumerHandle {
     pub id: u32,
-    pub data_receiver: UnboundedReceiver<ConsumerItem>,
-    pub shutdown_sender: UnboundedSender<u32>,
+    pub data_rx: UnboundedReceiver<ConsumerItem>,
+    pub shutdown_tx: UnboundedSender<u32>,
 }
 
 pub struct ConsumerAddedNotification {}

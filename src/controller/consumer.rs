@@ -42,7 +42,7 @@ impl Future for MesgConsumer {
 
 impl From<ConsumerHandle> for MesgConsumer {
     fn from(handle: ConsumerHandle) -> Self {
-        MesgConsumer::new(handle.id, handle.data_receiver,handle.shutdown_sender)
+        MesgConsumer::new(handle.id, handle.data_rx, handle.shutdown_tx)
     }
 }
 
