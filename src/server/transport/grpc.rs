@@ -18,6 +18,8 @@ pub struct PullRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub application: ::prost::alloc::string::String,
+    #[prost(int32, tag = "3")]
+    pub invisibility_timeout: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {

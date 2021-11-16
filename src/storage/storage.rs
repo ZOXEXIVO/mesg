@@ -1,6 +1,7 @@
 use crate::storage::utils::StorageIdGenerator;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 
+use std::cmp::Reverse;
 use log::{warn};
 use bytes::Bytes;
 use prost::alloc::collections::{BTreeMap};
@@ -94,11 +95,10 @@ pub enum StorageError {
     LockError(#[from] MessageStorageError)
 }
 
-
 // Message storage
 pub struct MessageStorage {
     application_queues: Mutex<HashMap<String, VecDeque<Message>>>,
-    unacked: BTreeMap<i64, Message>,
+    uncommited_store: Mutex<HashMap<String, UncommitedStorage>>,
     notify: (Sender<()>, Receiver<()>)
 }
 
@@ -106,7 +106,7 @@ impl MessageStorage {
     pub fn new() -> Self {
         MessageStorage {
             application_queues: Mutex::new(HashMap::new()),
-            unacked: BTreeMap::new(),
+            uncommited_store: Mutex::new(HashMap::new()),
             notify: channel(1024)
         }
     }
@@ -133,7 +133,32 @@ impl MessageStorage {
         
         match guard.get_mut(application) {
             Some(application_queue) => {
-                Ok(application_queue.pop_front())
+                if let Some(message) = application_queue.pop_front(){                    
+                    let mut uncommited_store_guard = self.uncommited_store.lock().await;
+                    
+                    match uncommited_store_guard.get_mut(application) {
+                        Some(uncommited_store) => {
+                            
+                            uncommited_store.min_heap.push(Reverse(message.id));
+                            uncommited_store.data.insert(message.id, Message::clone(&message));
+                            
+                            Ok(Some(message))
+                        },
+                        None => {
+                            let mut uncommited_store = UncommitedStorage::new();
+
+                            uncommited_store.data.insert(message.id, Message::clone(&message));
+
+                            uncommited_store.min_heap.push(Reverse(message.id));
+
+                            uncommited_store_guard.insert(application.into(), uncommited_store);
+                                
+                            Ok(Some(message))
+                        }
+                    }                    
+                } else {
+                   Ok(None) 
+                }            
             },
             None => Err(MessageStorageError::NoSubqueue)
         }
@@ -153,6 +178,20 @@ impl MessageStorage {
         }
         
         true
+    }
+}
+
+pub struct UncommitedStorage {
+    min_heap: BinaryHeap<Reverse<i64>>,
+    data: BTreeMap<i64, Message>
+}
+
+impl UncommitedStorage {
+    pub fn new() -> Self {
+        UncommitedStorage {
+            min_heap: BinaryHeap::new(),
+            data: BTreeMap::new()
+        }
     }
 }
 

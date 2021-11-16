@@ -1,4 +1,5 @@
 ﻿use std::sync::Arc;
+use log::info;
 use tokio::sync::Mutex;
 use crate::controller::{Consumer, ConsumerAddedNotification};
 
@@ -10,6 +11,8 @@ impl ConsumerCoordinator {
     }
 
     pub fn start(&self, consumers: Arc<Mutex<Vec<Consumer>>>, notification: ConsumerAddedNotification) {
+        info!("shudown waiter starts");
+        
         tokio::spawn(async move {
             loop {
                 //let queue_consumer = notification.get_next_consumer().await;

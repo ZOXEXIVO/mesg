@@ -22,6 +22,7 @@ message PushResponse {
 message PullRequest {
   string queue = 1;
   string application = 2;
+  int32 invisibility_timeout = 3;
 }
 
 message PullResponse {

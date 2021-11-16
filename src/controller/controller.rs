@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{Ordering, AtomicU32};
 use bytes::Bytes;
-use chashmap::{CHashMap};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
 use crate::storage::{Storage};
 use crate::controller::{ConsumerCoordinator, ConsumerItem, MesgConsumer};
@@ -10,14 +9,14 @@ use tokio::sync::Mutex;
 
 pub struct MesgController {
     storage: Arc<Storage>,
-    queue_consumers: CHashMap<String, ConsumerCollection>,
+    consummers: ConsumerCollection
 }
 
 impl MesgController {
     pub fn new(storage: Arc<Storage>) -> Self {
         MesgController {
             storage,
-            queue_consumers: CHashMap::new(),
+            consummers: ConsumerCollection::new()
         }
     }
 
@@ -26,24 +25,11 @@ impl MesgController {
             self.storage.create_application_queue(queue, application).await;
         }
         
+        info!("consumer created for queue={}, application={}", queue, application);
+        
         let storage = Arc::clone(&self.storage);
-
-        let consumer_handle = match self.queue_consumers.get_mut(queue) {
-            Some(mut consumer) => {
-                consumer.add_consumer(storage).await
-            }
-            None => {
-                let mut consumer_collection = ConsumerCollection::new();
-
-                let consumer_handle = consumer_collection.add_consumer(storage).await;
-
-                self.queue_consumers.insert(queue.into(), consumer_collection);
-
-                consumer_handle
-            }
-        };
-
-        info!("consumer created for queue={}", queue);
+        
+        let consumer_handle = self.consummers.add_consumer(storage).await;       
 
         MesgConsumer::from(consumer_handle)
     }
@@ -86,7 +72,7 @@ impl ConsumerCollection {
         consumers
     }
 
-    pub async fn add_consumer(&mut self, storage: Arc<Storage>) -> ConsumerHandle {
+    pub async fn add_consumer(&self, storage: Arc<Storage>) -> ConsumerHandle {
         let (consumer_data_sender, consumer_data_receiver) = unbounded_channel();
 
         let consumer_id = self.generate_id();
@@ -110,6 +96,8 @@ impl ConsumerCollection {
     }
 
     fn shutdown_waiter_start(consumers: Arc<Mutex<Vec<Consumer>>>, mut receiver: UnboundedReceiver<u32>) {
+        info!("shudown waiter starterd");
+        
         tokio::spawn(async move {
             while let Some(consumer_id_to_remove) = receiver.recv().await {
                 let mut consumers_guard = consumers.lock().await;
