@@ -66,6 +66,7 @@ where
             .pull(PullRequestModel {
                 queue: req.queue,
                 application: req.application,
+                invisibility_timeout: req.invisibility_timeout as u32,
             })
             .await;
 

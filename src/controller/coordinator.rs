@@ -1,28 +1,17 @@
-﻿use std::sync::Arc;
+﻿use crate::controller::Consumer;
 use log::info;
+use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
-use crate::controller::{Consumer};
 
 pub struct ConsumerCoordinator;
 
 impl ConsumerCoordinator {
-    pub async fn start(consumers: Arc<RwLock<Vec<Consumer>>>) {
-        let consumers = consumers.read().await;
-        
-        // for consumer in consumers {
-        //     tokio::spawn(async move {
-        //         loop {
-        //             let queue_consumer = notification.get_next_consumer().await;
-        // 
-        //             tokio::spawn(async move {
-        //                 self.consumer_worker(queue_consumer).await
-        //             })
-        //         }
-        //     });
-        // }
+    pub fn start(consumers: Arc<RwLock<Vec<Consumer>>>) {
+        tokio::spawn(async move {
+            // Run consuming task
+            let consumers = consumers.read().await;
+        });
     }
-    
-    pub async fn consumer_worker(&self, queue: String) {
-        
-    }
+
+    pub async fn consumer_worker(&self, queue: String) {}
 }

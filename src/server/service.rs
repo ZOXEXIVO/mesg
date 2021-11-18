@@ -1,8 +1,8 @@
+use crate::controller::{MesgConsumer, MesgController};
+use crate::metrics::MetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crate::metrics::MetricsWriter;
-use crate::controller::{MesgController, MesgConsumer};
-use log::{info};
+use log::info;
 
 #[async_trait]
 pub trait Mesg {
@@ -17,9 +17,7 @@ pub struct MesgService {
 
 impl MesgService {
     pub fn new(controller: MesgController) -> Self {
-        MesgService {
-            controller
-        }
+        MesgService { controller }
     }
 }
 
@@ -29,7 +27,7 @@ impl Mesg for MesgService {
         MetricsWriter::inc_push_metric();
 
         PushResponseModel {
-            success:  self.controller.push(&request.queue, request.data).await
+            success: self.controller.push(&request.queue, request.data).await,
         }
     }
 
@@ -39,7 +37,14 @@ impl Mesg for MesgService {
         info!("consumer connected: queue: {}", &request.queue);
 
         PullResponseModel {
-            consumer: self.controller.create_consumer(&request.queue, &request.application).await
+            consumer: self
+                .controller
+                .create_consumer(
+                    &request.queue,
+                    &request.application,
+                    request.invisibility_timeout,
+                )
+                .await,
         }
     }
 
@@ -47,7 +52,10 @@ impl Mesg for MesgService {
         MetricsWriter::inc_commit_metric();
 
         CommitResponseModel {
-            success: self.controller.commit(request.id, &request.queue, &request.application).await
+            success: self
+                .controller
+                .commit(request.id, &request.queue, &request.application)
+                .await,
         }
     }
 }
@@ -55,7 +63,7 @@ impl Mesg for MesgService {
 // Push
 pub struct PushRequestModel {
     pub queue: String,
-    pub data: Bytes
+    pub data: Bytes,
 }
 
 pub struct PushResponseModel {
@@ -67,6 +75,7 @@ pub struct PushResponseModel {
 pub struct PullRequestModel {
     pub queue: String,
     pub application: String,
+    pub invisibility_timeout: u32,
 }
 
 pub struct PullResponseModel {
@@ -82,5 +91,5 @@ pub struct CommitRequestModel {
 }
 
 pub struct CommitResponseModel {
-    pub success: bool
+    pub success: bool,
 }
