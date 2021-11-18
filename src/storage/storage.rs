@@ -1,20 +1,21 @@
 use crate::storage::utils::StorageIdGenerator;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
-use std::cmp::Reverse;
-use log::{warn};
 use bytes::Bytes;
 use prost::alloc::collections::{BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 use chashmap::CHashMap;
-use tokio::sync::{AcquireError, Mutex};
+use clap::App;
+use tokio::sync::{AcquireError, Mutex, RwLock};
 use crate::metrics::MetricsWriter;
 use thiserror::Error;
-use tokio::sync::mpsc::{channel, Sender, Receiver};
+use tokio::sync::mpsc::{Sender};
+use log::info;
 
 pub struct Storage {
-    storage: Arc<CHashMap<String, MessageStorage>>
+    storage: Arc<CHashMap<String, MessageStorage>>,
 }
 
 impl Storage {
@@ -26,38 +27,44 @@ impl Storage {
 
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
         let message_id = StorageIdGenerator::generate();
-        
+
         let message = Message::new(message_id, data);
-              
+
         match self.storage.get_mut(queue) {
             Some(mut item) => {
                 Ok(item.push(message).await?)
-            },
+            }
             None => {
                 MetricsWriter::inc_queues_count_metric();
-                
-                // create queue storage, but not push message to it                
-                let storage = MessageStorage::new();
 
-                self.storage.insert(queue.into(), storage);
-                
+                // create queue storage, but not push message to it, because no consumers
+                self.storage.insert(queue.into(), MessageStorage::new());
+
                 Ok(false)
             }
         }
     }
-    
-    pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {  
-        match self.storage.get_mut(queue) {
-            Some(mut storage) => {
-                match storage.pop(application).await {
-                    Ok(Some(msg)) => {
-                        Some(msg)
-                    },
-                    _ => None
-                }
-            },
-            _ => None
+
+    pub async fn pop(&self, queue: &str, application: &str, invisibility_timeout: u64) -> Option<Message> {
+        info!("try poll, queue: {}, application: {}", queue, application);
+        
+        if let Some(mut storage) = self.storage.get_mut(queue) {
+            if let Ok(msg) = storage.pop(application, invisibility_timeout).await {
+                return msg;
+            }
         }
+
+        None
+    }
+
+    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
+        if let Some(mut storage) = self.storage.get_mut(queue) {
+            if let Ok(msg) = storage.commit(application, id).await {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub async fn is_application_queue_exists(&self, queue: &str, application: &str) -> bool {
@@ -67,24 +74,20 @@ impl Storage {
 
         false
     }
-    
+
     pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
         if let Some(storage) = self.storage.get_mut(queue) {
             return storage.create_application_queue(application).await;
         }
-        
-        false        
-    }
-    
-    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
-        true
+
+        false
     }
 }
 
 impl Clone for Storage {
     fn clone(&self) -> Self {
         Storage {
-            storage : Arc::clone(&self.storage)
+            storage: Arc::clone(&self.storage)
         }
     }
 }
@@ -97,101 +100,183 @@ pub enum StorageError {
 
 // Message storage
 pub struct MessageStorage {
-    application_queues: Mutex<HashMap<String, VecDeque<Message>>>,
-    uncommited_store: Mutex<HashMap<String, UncommitedStorage>>,
-    notify: (Sender<()>, Receiver<()>)
+    application_queues: Arc<RwLock<HashMap<String, Mutex<VecDeque<Message>>>>>,
+    uncommited_store: Arc<RwLock<HashMap<String, Mutex<UncommitedStorage>>>>,
+    notify: Sender<(String, i64)>,
 }
 
 impl MessageStorage {
     pub fn new() -> Self {
-        MessageStorage {
-            application_queues: Mutex::new(HashMap::new()),
-            uncommited_store: Mutex::new(HashMap::new()),
-            notify: channel(1024)
-        }
+        let (restore_tx, mut restore_rx) = tokio::sync::mpsc::channel(1024);
+
+        let storage = MessageStorage {
+            application_queues: Arc::new(RwLock::new(HashMap::new())),
+            uncommited_store: Arc::new(RwLock::new(HashMap::new())),
+            notify: restore_tx,
+        };
+
+        let application_queue = Arc::clone(&storage.application_queues);
+        let uncommited_store = Arc::clone(&storage.uncommited_store);
+
+        tokio::spawn(async move {
+            while let Some((application, id)) = restore_rx.recv().await {
+                let uncommited_store_read_guard = uncommited_store.read().await;
+
+                if let Some(uncommited_store) = uncommited_store_read_guard.get(&application) {
+                    let mut uncommited_store_write_guard = uncommited_store.lock().await;
+
+                    if let Some(message) = uncommited_store_write_guard.take(id) {
+                        let application_queue_read_guard = application_queue.read().await;
+
+                        if let Some(application_queue) = application_queue_read_guard.get(&application) {
+                            let mut application_queue_write_guard = application_queue.lock().await;
+
+                            application_queue_write_guard.push_back(message);
+                        }
+                    }
+                }
+            }
+        });
+
+        storage
     }
 
+    pub async fn commit(&mut self, application: &str, id: i64) -> Result<bool, MessageStorageError> {
+        let uncommited_store_read_guard = self.uncommited_store.read().await;
+
+        if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
+            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+
+            uncommited_store_write_guard.remove(id);
+            
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+    
     pub async fn push(&mut self, message: Message) -> Result<bool, MessageStorageError> {
-        let mut guard = self.application_queues.lock().await;
+        let guard = self.application_queues.read().await;
 
         let keys: Vec<String> = guard.keys().map(String::from).collect();
 
-        let mut is_ok = false;
-        
+        let mut has_any_push = false;
+
         for app_queue_key in &keys {
-            if let Some(app_queue) = guard.get_mut(app_queue_key) {
-                app_queue.push_back(Message::clone(&message));
-                is_ok = true;
+            if let Some(app_queue) = guard.get(app_queue_key) {
+                let mut guard = app_queue.lock().await;
+                guard.push_back(Message::clone(&message));
+                has_any_push = true;
             }
         }
 
-        Ok(is_ok)
+        Ok(has_any_push)
     }
 
-    pub async fn pop(&mut self, application: &str) -> Result<Option<Message>, MessageStorageError> {
-        let mut guard = self.application_queues.lock().await;
-        
-        match guard.get_mut(application) {
+    pub async fn pop(&mut self, application: &str, invisibility_timeout: u64) -> Result<Option<Message>, MessageStorageError> {
+        let guard = self.application_queues.read().await;
+
+        match guard.get(application) {
             Some(application_queue) => {
-                if let Some(message) = application_queue.pop_front(){                    
-                    let mut uncommited_store_guard = self.uncommited_store.lock().await;
-                    
-                    match uncommited_store_guard.get_mut(application) {
+                info!("application_queue finded: {}", application);
+                
+                let mut app_queue_guard = application_queue.lock().await;
+                if let Some(message) = app_queue_guard.pop_front() {
+                    let uncommited_store_read_guard = self.uncommited_store.read().await;
+
+                    match uncommited_store_read_guard.get(application) {
                         Some(uncommited_store) => {
+                            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+
+                            uncommited_store_write_guard.add(&message);
+
+                            // start tokio task to restore item
+                            self.start_restore_task((String::from(application), message.id), invisibility_timeout);
+
+                            info!("add to uncommited_store {}, message_id ={}", application,  message.id);
                             
-                            uncommited_store.min_heap.push(Reverse(message.id));
-                            uncommited_store.data.insert(message.id, Message::clone(&message));
-                            
-                            Ok(Some(message))
-                        },
-                        None => {
-                            let mut uncommited_store = UncommitedStorage::new();
-
-                            uncommited_store.data.insert(message.id, Message::clone(&message));
-
-                            uncommited_store.min_heap.push(Reverse(message.id));
-
-                            uncommited_store_guard.insert(application.into(), uncommited_store);
-                                
                             Ok(Some(message))
                         }
-                    }                    
+                        None => {
+                            drop(uncommited_store_read_guard);
+
+                            info!("no uncommited_store, adding new {}, message_id ={}", application,  message.id);
+                            
+                            let mut uncommited_store_write_guard = self.uncommited_store.write().await;
+
+                            let mut uncommited_store = UncommitedStorage::new();
+
+                            uncommited_store.add(&message);
+
+                            uncommited_store_write_guard.insert(application.into(), Mutex::new(uncommited_store));
+
+                            // start tokio task to restore item
+                            self.start_restore_task((String::from(application), message.id), invisibility_timeout);
+                            
+                            Ok(Some(message))
+                        }
+                    }
                 } else {
-                   Ok(None) 
-                }            
-            },
-            None => Err(MessageStorageError::NoSubqueue)
+                    info!("no message in application queue {}", application);
+                    Ok(None)
+                }
+            }
+            None => {
+                info!("no application queue {}", application);
+                Err(MessageStorageError::NoSubqueue)
+            }
         }
+    }
+
+    pub fn start_restore_task(&self, data: (String, i64), invisibility_timeout: u64) {
+        let send_tx = self.notify.clone();
+
+        info!("started restore task for message_id={}", data.1);
+        
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(invisibility_timeout)).await;
+            send_tx.send(data).await
+        });
     }
 
     pub async fn is_application_exists(&self, application: &str) -> bool {
-        let guard = self.application_queues.lock().await;
-
+        let guard = self.application_queues.read().await;
         guard.contains_key(application)
     }
-    
+
     pub async fn create_application_queue(&self, application: &str) -> bool {
-        let mut guard = self.application_queues.lock().await;
-        
+        let mut guard = self.application_queues.write().await;
+
         if !guard.contains_key(application) {
-            guard.insert(application.into(), VecDeque::new());
+            guard.insert(application.into(), Mutex::new(VecDeque::new()));
+            info!("application queeu created={}", application);
         }
-        
+
         true
     }
 }
 
 pub struct UncommitedStorage {
-    min_heap: BinaryHeap<Reverse<i64>>,
-    data: BTreeMap<i64, Message>
+    data: BTreeMap<i64, Message>,
 }
 
 impl UncommitedStorage {
     pub fn new() -> Self {
         UncommitedStorage {
-            min_heap: BinaryHeap::new(),
             data: BTreeMap::new()
         }
+    }
+
+    pub fn add(&mut self, message: &Message) {
+        self.data.insert(message.id, Message::clone(message));
+    }
+
+    pub fn take(&mut self, id: i64) -> Option<Message> {
+        self.data.remove(&id)
+    }
+
+    pub fn remove(&mut self, id: i64) {
+        self.data.remove(&id);
     }
 }
 
@@ -200,13 +285,13 @@ pub enum MessageStorageError {
     #[error("Application queue not exists")]
     NoSubqueue,
     #[error("Storage semaphore error")]
-    LockError(#[from] AcquireError)
+    LockError(#[from] AcquireError),
 }
 
-pub struct Message{
+pub struct Message {
     pub id: i64,
     pub data: Bytes,
-    pub delivered: bool
+    pub delivered: bool,
 }
 
 impl Ord for Message {
@@ -229,12 +314,12 @@ impl PartialOrd<Message> for Message {
     }
 }
 
-impl Message{
+impl Message {
     pub fn new(id: i64, data: Bytes) -> Self {
         Message {
             id,
             data: Bytes::clone(&data),
-            delivered: false
+            delivered: false,
         }
     }
 }
@@ -242,9 +327,9 @@ impl Message{
 impl Clone for Message {
     fn clone(&self) -> Self {
         Message {
-            id: self.id.clone(),
+            id: self.id,
             data: Bytes::clone(&self.data),
-            delivered: self.delivered
+            delivered: self.delivered,
         }
     }
 }

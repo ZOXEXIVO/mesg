@@ -4,17 +4,17 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use crate::metrics::MetricsWriter;
 use log::{info, error};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 use crate::controller::ConsumerHandle;
 
 pub struct MesgConsumer {
     pub id: u32,
-    pub reciever: UnboundedReceiver<ConsumerItem>,
+    pub reciever: Receiver<ConsumerItem>,
     pub shudown_channel: UnboundedSender<u32>
 }
 
 impl MesgConsumer {
-    pub fn new(id: u32, reciever: UnboundedReceiver<ConsumerItem>, shudown_channel: UnboundedSender<u32>) -> Self {
+    pub fn new(id: u32, reciever: Receiver<ConsumerItem>, shudown_channel: UnboundedSender<u32>) -> Self {
         MesgConsumer {
             id,
             reciever,

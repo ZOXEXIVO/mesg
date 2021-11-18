@@ -1,27 +1,25 @@
 ﻿use std::sync::Arc;
 use log::info;
-use tokio::sync::Mutex;
-use crate::controller::{Consumer, ConsumerAddedNotification};
+use tokio::sync::{Mutex, RwLock};
+use crate::controller::{Consumer};
 
 pub struct ConsumerCoordinator;
 
 impl ConsumerCoordinator {
-    pub fn new() -> Self {
-        ConsumerCoordinator {}
-    }
-
-    pub fn start(&self, consumers: Arc<Mutex<Vec<Consumer>>>, notification: ConsumerAddedNotification) {
-        info!("shudown waiter starts");
+    pub async fn start(consumers: Arc<RwLock<Vec<Consumer>>>) {
+        let consumers = consumers.read().await;
         
-        tokio::spawn(async move {
-            loop {
-                //let queue_consumer = notification.get_next_consumer().await;
-                
-                // tokio::spawn(async move {
-                //     self.consumer_worker(queue_consumer).await
-                // })
-            }
-        });
+        // for consumer in consumers {
+        //     tokio::spawn(async move {
+        //         loop {
+        //             let queue_consumer = notification.get_next_consumer().await;
+        // 
+        //             tokio::spawn(async move {
+        //                 self.consumer_worker(queue_consumer).await
+        //             })
+        //         }
+        //     });
+        // }
     }
     
     pub async fn consumer_worker(&self, queue: String) {
