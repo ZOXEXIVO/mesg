@@ -45,11 +45,12 @@ where
             .push(PushRequestModel {
                 queue: message.queue,
                 data: Bytes::copy_from_slice(&message.data),
-                broadcast: message.broadcast,
             })
             .await;
 
-        Ok(tonic::Response::new(PushResponse { ack: result.ack }))
+        Ok(tonic::Response::new(PushResponse {
+            success: result.success,
+        }))
     }
 
     type PullStream = InternalStreamConsumer;
@@ -60,11 +61,18 @@ where
     ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
-        let result = self.inner.pull(PullRequestModel { queue: req.queue }).await;
+        let pull_response = self
+            .inner
+            .pull(PullRequestModel {
+                queue: req.queue,
+                application: req.application,
+                invisibility_timeout: req.invisibility_timeout as u32,
+            })
+            .await;
 
-        let internal_consumer = InternalStreamConsumer::new(result.consumer);
-
-        Ok(tonic::Response::new(internal_consumer))
+        Ok(tonic::Response::new(InternalStreamConsumer::new(
+            pull_response.consumer,
+        )))
     }
 
     async fn commit(
@@ -73,15 +81,18 @@ where
     ) -> std::result::Result<tonic::Response<CommitResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        self.inner
+        let commit_response = self
+            .inner
             .commit(CommitRequestModel {
-                queue: req.queue,
                 id: req.id,
-                consumer_id: req.consumer_id,
+                queue: req.queue,
+                application: req.application,
             })
             .await;
 
-        Ok(tonic::Response::new(CommitResponse {}))
+        Ok(tonic::Response::new(CommitResponse {
+            success: commit_response.success,
+        }))
     }
 }
 
@@ -103,7 +114,6 @@ impl Stream for InternalStreamConsumer {
             Poll::Ready(item) => Poll::Ready(Some(Ok(PullResponse {
                 id: item.id,
                 data: item.data.to_vec(),
-                consumer_id: item.consumer_id,
             }))),
             _ => Poll::Pending,
         }

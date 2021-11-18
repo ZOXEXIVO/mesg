@@ -1,8 +1,8 @@
+use crate::controller::{MesgConsumer, MesgController};
+use crate::metrics::MetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crate::metrics::MetricsWriter;
-use crate::controller::{MesgController, MesgConsumer};
-use log::{info};
+use log::info;
 
 #[async_trait]
 pub trait Mesg {
@@ -12,45 +12,54 @@ pub trait Mesg {
 }
 
 pub struct MesgService {
-    controller: MesgController
+    controller: MesgController,
 }
 
 impl MesgService {
     pub fn new(controller: MesgController) -> Self {
-        MesgService {
-            controller
-        }
+        MesgService { controller }
     }
 }
 
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        self.controller.push(&request.queue, request.data, request.broadcast).await;
-
         MetricsWriter::inc_push_metric();
 
         PushResponseModel {
-            ack: true
+            success: self.controller.push(&request.queue, request.data).await,
         }
     }
 
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel {
         MetricsWriter::inc_consumers_count_metric();
 
-        info!("consumer connected: queue: {}", &request.queue);
-        
-        PullResponseModel{
-            consumer: self.controller.create_consumer(&request.queue)
-        }
+        let consumer = self
+            .controller
+            .create_consumer(
+                &request.queue,
+                &request.application,
+                request.invisibility_timeout,
+            )
+            .await;
+
+        info!(
+            "consumer connected: consumer_id: {}, queue: {}",
+            consumer.id, &request.queue
+        );
+
+        PullResponseModel { consumer }
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        self.controller.commit(&request.queue, request.id, request.consumer_id).await;
-
         MetricsWriter::inc_commit_metric();
 
-        CommitResponseModel {}
+        CommitResponseModel {
+            success: self
+                .controller
+                .commit(request.id, &request.queue, &request.application)
+                .await,
+        }
     }
 }
 
@@ -58,29 +67,32 @@ impl Mesg for MesgService {
 pub struct PushRequestModel {
     pub queue: String,
     pub data: Bytes,
-    pub broadcast: bool
 }
 
 pub struct PushResponseModel {
-    pub ack: bool,
+    pub success: bool,
 }
 
 // Pull
 
 pub struct PullRequestModel {
     pub queue: String,
+    pub application: String,
+    pub invisibility_timeout: u32,
 }
 
 pub struct PullResponseModel {
-    pub consumer: MesgConsumer
+    pub consumer: MesgConsumer,
 }
 
 // Commit
 
 pub struct CommitRequestModel {
-    pub queue: String,
     pub id: i64,
-    pub consumer_id: u32,
+    pub queue: String,
+    pub application: String,
 }
 
-pub struct CommitResponseModel {}
+pub struct CommitResponseModel {
+    pub success: bool,
+}

@@ -12,31 +12,33 @@ service MesgProtocol {
 message PushRequest {
   string queue = 1;
   bytes data = 2;
-  bool broadcast = 3;
 }
 
 message PushResponse {
-  bool ack = 1;
+  bool success = 1;
 }
 
 // Pull
 message PullRequest {
   string queue = 1;
-  int32 invisibility_ms = 2;
+  string application = 2;
+  int32 invisibility_timeout = 3;
 }
 
 message PullResponse {
   int64 id = 1;
   bytes data = 2;
-  uint32 consumer_id = 3;  
 }
 
 // Commit 
 
 message CommitRequest {
-  string queue = 1;
-  int64 id = 2;
-  uint32 consumer_id = 3;
+  int64 id = 1;
+  
+  string queue = 2;
+  string application = 3;
 }
 
-message CommitResponse {}
+message CommitResponse {
+  bool success = 1;
+}

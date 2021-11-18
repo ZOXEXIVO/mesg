@@ -1,108 +1,124 @@
-use std::sync::atomic::{Ordering, AtomicU32};
+use crate::controller::{
+    Consumer, ConsumerCoordinator, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer,
+};
+use crate::storage::Storage;
 use bytes::Bytes;
-use chashmap::{CHashMap};
-use tokio::sync::mpsc::{Sender, unbounded_channel, UnboundedSender};
-use crate::storage::{Storage};
-use crate::controller::{ConsumerItem, MesgConsumer};
-use log::{info, error};
+use log::info;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc::{channel, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::RwLock;
 
 pub struct MesgController {
-    storage: Storage,
-    queue_consumers: CHashMap<String, ConsumerCollection>,
+    storage: Arc<Storage>,
+    consummers: ConsumerCollection,
 }
 
 impl MesgController {
-    pub fn new(storage: Storage) -> Self {
+    pub fn new(storage: Arc<Storage>) -> Self {
         MesgController {
             storage,
-            queue_consumers: CHashMap::new(),
+            consummers: ConsumerCollection::new(),
         }
     }
 
-    pub fn create_consumer(&self, queue: &str) -> MesgConsumer {
-        let (sender, reciever) = unbounded_channel();
+    pub async fn create_consumer(
+        &self,
+        queue: &str,
+        application: &str,
+        invisibility_timeout: u32,
+    ) -> MesgConsumer {
+        self.storage
+            .create_application_queue(queue, application)
+            .await;
 
-        let cloned_storage = self.storage.clone();
+        info!(
+            "consumer created for queue={}, application={}",
+            queue, application
+        );
 
-        let consumer_shutdown_sender = match self.queue_consumers.get_mut(queue) {
-            Some(mut consumer) => {
-                consumer.add_consumer(cloned_storage, queue, sender)
-            }
-            None => {
-                let mut consumer_collection = ConsumerCollection::new();
+        let storage = Arc::clone(&self.storage);
 
-                let consumer_shudown_sender = consumer_collection.add_consumer(cloned_storage, queue, sender);
+        let consumer_handle = self
+            .consummers
+            .add_consumer(storage, queue, application, invisibility_timeout)
+            .await;
 
-                self.queue_consumers.insert(queue.into(), consumer_collection);
-
-                consumer_shudown_sender                
-            }
-        };
-
-        info!("consumer created for queue={}", queue);
-
-        MesgConsumer::new(reciever, consumer_shutdown_sender)
+        MesgConsumer::from(consumer_handle)
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes, broadcast: bool) {
-        self.storage.push(queue, Bytes::clone(&data)).await.unwrap();
+    pub async fn push(&self, queue: &str, data: Bytes) -> bool {
+        self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
     }
 
-    pub async fn commit(&self, queue: &str, id: i64, consumer_id: u32) {
-        self.storage.commit(queue, id, consumer_id).await;
+    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
+        self.storage.commit(id, queue, application).await
     }
 }
 
 pub struct ConsumerCollection {
-    generator: AtomicU32
+    generator: AtomicU32,
+    consumers: Arc<RwLock<Vec<Consumer>>>,
+    shutdown_tx: UnboundedSender<u32>,
 }
 
 impl ConsumerCollection {
     pub fn new() -> Self {
-        ConsumerCollection {
-            generator: AtomicU32::new(0)
+        let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let consumers = ConsumerCollection {
+            generator: AtomicU32::new(0),
+            consumers: Arc::new(RwLock::new(Vec::new())),
+            shutdown_tx,
+        };
+
+        ConsumerCoordinator::start(Arc::clone(&consumers.consumers));
+
+        // Run shutdown waiter
+        ConsumersShutdownWaiter::wait(Arc::clone(&consumers.consumers), shutdown_rx);
+
+        consumers
+    }
+
+    pub async fn add_consumer(
+        &self,
+        storage: Arc<Storage>,
+        queue: &str,
+        application: &str,
+        invisibility_timeout: u32,
+    ) -> ConsumerHandle {
+        let (consumer_data_tx, consumer_data_rx) = channel(1024);
+
+        let consumer_id = self.generate_id();
+
+        let mut consumers = self.consumers.write().await;
+
+        let consumer = Consumer::new(
+            consumer_id,
+            Arc::clone(&storage),
+            String::from(queue),
+            String::from(application),
+            invisibility_timeout,
+            consumer_data_tx,
+        );
+
+        consumers.push(consumer);
+
+        ConsumerHandle {
+            id: consumer_id,
+            data_rx: consumer_data_rx,
+            shutdown_tx: self.shutdown_tx.clone(),
         }
     }
 
-    pub fn add_consumer(&mut self, storage: Storage, queue: &str, consumer_sender: UnboundedSender<ConsumerItem>) -> Sender<()> {
-        let (shutdown_sender, mut shutdown_reciever) = tokio::sync::mpsc::channel(1);
-
-        let id = self.generator.fetch_add(1, Ordering::SeqCst);
-
-        let queue_name: String = queue.into();
-
-        tokio::spawn(async move {
-            loop {
-                if shutdown_reciever.try_recv().is_ok() {
-                    info!("consumer recieved shutdown signal");
-                    break;
-                }
-
-                if let Some(msg) = storage.pop(&queue_name).await {
-                    info!("consumer: {}, message recieved", id);
-
-                    let consumer_item = ConsumerItem{
-                        id: msg.id,
-                        data: Bytes::clone(&msg.data),
-                        consumer_id: id
-                    };
-
-                    match consumer_sender.send(consumer_item) {
-                        Ok(_) => {
-                            info!("consumer: {}, message pushed", id);
-                        },
-                        Err(err) => {
-                            info!("consumer: {}, error while pushing message: {}", id, err);
-                            
-                            if let Err(err) = storage.push(&queue_name, err.0.data).await {
-                                error!("consumer: {}, push again storage error: {}", id, err);
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        
-        shutdown_sender
+    fn generate_id(&self) -> u32 {
+        self.generator.fetch_add(1, Ordering::SeqCst)
     }
+}
+
+pub struct ConsumerHandle {
+    pub id: u32,
+    pub data_rx: Receiver<ConsumerItem>,
+    pub shutdown_tx: UnboundedSender<u32>,
 }

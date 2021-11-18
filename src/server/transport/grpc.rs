@@ -5,21 +5,21 @@ pub struct PushRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag = "3")]
-    pub broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
     #[prost(bool, tag = "1")]
-    pub ack: bool,
+    pub success: bool,
 }
 /// Pull
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(int32, tag = "2")]
-    pub invisibility_ms: i32,
+    #[prost(string, tag = "2")]
+    pub application: ::prost::alloc::string::String,
+    #[prost(int32, tag = "3")]
+    pub invisibility_timeout: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
@@ -27,22 +27,23 @@ pub struct PullResponse {
     pub id: i64,
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "3")]
-    pub consumer_id: u32,
 }
 // Commit
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
-    #[prost(string, tag = "1")]
-    pub queue: ::prost::alloc::string::String,
-    #[prost(int64, tag = "2")]
+    #[prost(int64, tag = "1")]
     pub id: i64,
-    #[prost(uint32, tag = "3")]
-    pub consumer_id: u32,
+    #[prost(string, tag = "2")]
+    pub queue: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub application: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CommitResponse {}
+pub struct CommitResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+}
 #[doc = r" Generated server implementations."]
 pub mod mesg_protocol_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
