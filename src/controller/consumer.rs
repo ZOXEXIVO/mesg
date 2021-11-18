@@ -1,6 +1,6 @@
 use crate::controller::ConsumerHandle;
 use crate::metrics::MetricsWriter;
-use crate::storage::{Storage, Message};
+use crate::storage::{Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
 use std::future::Future;
@@ -27,29 +27,37 @@ impl Consumer {
         let consumer = Consumer { id };
 
         tokio::spawn(async move {
+            let mut attempt: u16 = 0;
+
             loop {
-                info!("consumer {} try pop", consumer.id);
-                
-                let mut attempt: u8 = 1;
-                
                 if let Some(messsage) = storage
                     .pop(&queue, &application, invisibility_timeout)
                     .await
                 {
+                    let id = messsage.id;
                     let item = ConsumerItem::from(messsage);
 
-                    data_tx.send(item).await;
+                    if let Err(err) = data_tx.send(item).await {
+                        if !storage.uncommit(id, &queue, &application).await {
+                            error!(
+                                "uncommit error id={}, queue={}, application={}, err={}",
+                                id, &queue, &application, err
+                            );
+                        }
+                    }
 
-                    attempt = 1;
+                    attempt = 0;
                 } else {
                     // 100, 300, 500, 700, 900
-                    
-                    if attempt < 10 {
-                        attempt = attempt + 1;
+
+                    if attempt < 30 {
+                        attempt += 1;
                     }
-                    
+
                     let sleep_time_ms = 100 * attempt;
-                    
+
+                    info!("waiting {} ms, consumer_id={}", sleep_time_ms, consumer.id);
+
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
@@ -120,7 +128,7 @@ impl From<Message> for ConsumerItem {
     fn from(message: Message) -> Self {
         ConsumerItem {
             id: message.id,
-            data: Bytes::clone(&message.data)
+            data: Bytes::clone(&message.data),
         }
     }
 }

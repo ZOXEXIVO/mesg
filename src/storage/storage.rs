@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::metrics::MetricsWriter;
 use bytes::Bytes;
 use chashmap::CHashMap;
-use clap::App;
+use color_eyre::owo_colors::OwoColorize;
 use log::info;
 use prost::alloc::collections::BTreeMap;
 use std::cmp::Ordering;
@@ -32,14 +32,16 @@ impl Storage {
 
         match self.storage.get_mut(queue) {
             Some(mut item) => Ok(item.push(message).await?),
-            None => {
-                MetricsWriter::inc_queues_count_metric();
+            None => Ok(false),
+        }
+    }
 
-                // create queue storage, but not push message to it, because no consumers
-                self.storage.insert(queue.into(), MessageStorage::new());
+    pub async fn create_queue_if_not_exists(&self, queue: &str, application: &str) {
+        MetricsWriter::inc_queues_count_metric();
 
-                Ok(false)
-            }
+        if !self.storage.contains_key(queue) {
+            info!("queue={} created", queue);
+            self.storage.insert(queue.into(), MessageStorage::new());
         }
     }
 
@@ -49,8 +51,6 @@ impl Storage {
         application: &str,
         invisibility_timeout: u32,
     ) -> Option<Message> {
-        info!("try poll, queue: {}, application: {}", queue, application);
-
         if let Some(mut storage) = self.storage.get_mut(queue) {
             if let Ok(msg) = storage.pop(application, invisibility_timeout).await {
                 return msg;
@@ -61,16 +61,26 @@ impl Storage {
     }
 
     pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
-        if let Some(mut storage) = self.storage.get_mut(queue) {
-            if let Ok(msg) = storage.commit(application, id).await {
-                return true;
+        if let Some(mut message_storage) = self.storage.get_mut(queue) {
+            if let Ok(msg) = message_storage.commit(application, id).await {
+                return msg;
             }
         }
 
         false
     }
 
-    pub async fn is_application_queue_exists(&self, queue: &str, application: &str) -> bool {
+    pub async fn uncommit(&self, id: i64, queue: &str, application: &str) -> bool {
+        if let Some(mut message_storage) = self.storage.get_mut(queue) {
+            if let Ok(res) = message_storage.uncommit(application, id).await {
+                return res;
+            }
+        }
+
+        false
+    }
+
+    async fn is_application_queue_exists(&self, queue: &str, application: &str) -> bool {
         if let Some(storage) = self.storage.get(queue) {
             return storage.is_application_exists(application).await;
         }
@@ -79,11 +89,24 @@ impl Storage {
     }
 
     pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
-        if let Some(storage) = self.storage.get_mut(queue) {
-            return storage.create_application_queue(application).await;
+        if self.is_application_queue_exists(queue, application).await {
+            return false;
         }
 
-        false
+        match self.storage.get_mut(queue) {
+            Some(message_store) => {
+                return message_store.create_application_queue(application).await;
+            }
+            None => {
+                let message_store = MessageStorage::new();
+
+                let result = message_store.create_application_queue(application).await;
+
+                self.storage.insert(queue.into(), message_store);
+
+                result
+            }
+        }
     }
 }
 
@@ -118,30 +141,43 @@ impl MessageStorage {
             notify: restore_tx,
         };
 
-        let application_queue = Arc::clone(&storage.application_queues);
-        let uncommited_store = Arc::clone(&storage.uncommited_store);
+        //let application_queue = Arc::clone(&storage.application_queues);
+        //let uncommited_store = Arc::clone(&storage.uncommited_store);
 
-        tokio::spawn(async move {
-            while let Some((application, id)) = restore_rx.recv().await {
-                let uncommited_store_read_guard = uncommited_store.read().await;
-
-                if let Some(uncommited_store) = uncommited_store_read_guard.get(&application) {
-                    let mut uncommited_store_write_guard = uncommited_store.lock().await;
-
-                    if let Some(message) = uncommited_store_write_guard.take(id) {
-                        let application_queue_read_guard = application_queue.read().await;
-
-                        if let Some(application_queue) =
-                            application_queue_read_guard.get(&application)
-                        {
-                            let mut application_queue_write_guard = application_queue.lock().await;
-
-                            application_queue_write_guard.push_back(message);
-                        }
-                    }
-                }
-            }
-        });
+        // tokio::spawn(async move {
+        //     while let Some((application, id)) = restore_rx.recv().await {
+        //         info!(
+        //             "received message restore event: id={}, application={}",
+        //             id, application
+        //         );
+        //
+        //         info!("begin restore.uncommited_store.read");
+        //         let uncommited_store_read_guard = uncommited_store.read().await;
+        //         info!("end restore.uncommited_store.read");
+        //
+        //         if let Some(uncommited_store) = uncommited_store_read_guard.get(&application) {
+        //             info!("begin restore.uncommited_store.lock");
+        //             let mut uncommited_store_write_guard = uncommited_store.lock().await;
+        //             info!("end restore.uncommited_store.lock");
+        //
+        //             if let Some(message) = uncommited_store_write_guard.take(id) {
+        //                 info!("begin restore.application_queue.read");
+        //                 let application_queue_read_guard = application_queue.write().await;
+        //                 info!("end restore.application_queue.read");
+        //
+        //                 if let Some(application_queue) =
+        //                     application_queue_read_guard.get(&application)
+        //                 {
+        //                     info!("begin restore.application_queue.lock");
+        //                     let mut application_queue_write_guard = application_queue.lock().await;
+        //                     info!("end restore.application_queue.lock");
+        //
+        //                     application_queue_write_guard.push_back(message);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // });
 
         storage
     }
@@ -158,7 +194,44 @@ impl MessageStorage {
 
             uncommited_store_write_guard.remove(id);
 
+            info!("message commited: id={}", id);
+
             return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    pub async fn uncommit(
+        &mut self,
+        application: &str,
+        id: i64,
+    ) -> Result<bool, MessageStorageError> {
+        let uncommited_store_read_guard = self.uncommited_store.read().await;
+        if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
+            info!("begin uncommited_store.lock");
+            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+            info!("end uncommited_store.lock");
+
+            if let Some(message) = uncommited_store_write_guard.take(id) {
+                info!("begin application_queues.read");
+                let application_queue_read_guard = self.application_queues.read().await;
+                info!("end application_queues.read");
+
+                if let Some(application_queue) = application_queue_read_guard.get(application) {
+                    info!("begin application_queue.lock");
+                    let mut application_queue_write_guard = application_queue.lock().await;
+                    info!("end application_queue.lock");
+
+                    let id = message.id;
+
+                    application_queue_write_guard.push_back(message);
+
+                    info!("message uncommited: {}", id);
+
+                    return Ok(true);
+                }
+            }
         }
 
         Ok(false)
@@ -191,15 +264,20 @@ impl MessageStorage {
 
         match guard.get(application) {
             Some(application_queue) => {
-                info!("application_queue finded: {}", application);
-
+                info!("begin pop.application_queue.lock");
                 let mut app_queue_guard = application_queue.lock().await;
+                info!("end pop.application_queue.lock");
+
                 if let Some(message) = app_queue_guard.pop_front() {
+                    info!("begin pop.uncommited_store.read");
                     let uncommited_store_read_guard = self.uncommited_store.read().await;
+                    info!("end pop.uncommited_store.read");
 
                     match uncommited_store_read_guard.get(application) {
                         Some(uncommited_store) => {
+                            info!("begin pop.uncommited_store.lock");
                             let mut uncommited_store_write_guard = uncommited_store.lock().await;
+                            info!("end pop.uncommited_store.lock");
 
                             uncommited_store_write_guard.add(&message);
 
@@ -210,8 +288,8 @@ impl MessageStorage {
                             );
 
                             info!(
-                                "add to uncommited_store {}, message_id ={}",
-                                application, message.id
+                                "add to uncommited_store id={}, application={}",
+                                message.id, application
                             );
 
                             Ok(Some(message))
@@ -220,12 +298,14 @@ impl MessageStorage {
                             drop(uncommited_store_read_guard);
 
                             info!(
-                                "no uncommited_store, adding new {}, message_id ={}",
-                                application, message.id
+                                "no uncommited_store, adding new id={}, application={}",
+                                message.id, application
                             );
 
+                            info!("begin uncommited_store.write");
                             let mut uncommited_store_write_guard =
                                 self.uncommited_store.write().await;
+                            info!("end uncommited_store.write");
 
                             let mut uncommited_store = UncommitedStorage::new();
 
@@ -244,12 +324,11 @@ impl MessageStorage {
                         }
                     }
                 } else {
-                    info!("no message in application queue {}", application);
                     Ok(None)
                 }
             }
             None => {
-                info!("no application queue {}", application);
+                info!("no application queue application={}", application);
                 Err(MessageStorageError::NoSubqueue)
             }
         }
@@ -276,7 +355,7 @@ impl MessageStorage {
 
         if !guard.contains_key(application) {
             guard.insert(application.into(), Mutex::new(VecDeque::new()));
-            info!("application queeu created={}", application);
+            info!("application queue created={}", application);
         }
 
         true

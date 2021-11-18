@@ -34,18 +34,21 @@ impl Mesg for MesgService {
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel {
         MetricsWriter::inc_consumers_count_metric();
 
-        info!("consumer connected: queue: {}", &request.queue);
+        let consumer = self
+            .controller
+            .create_consumer(
+                &request.queue,
+                &request.application,
+                request.invisibility_timeout,
+            )
+            .await;
 
-        PullResponseModel {
-            consumer: self
-                .controller
-                .create_consumer(
-                    &request.queue,
-                    &request.application,
-                    request.invisibility_timeout,
-                )
-                .await,
-        }
+        info!(
+            "consumer connected: consumer_id: {}, queue: {}",
+            consumer.id, &request.queue
+        );
+
+        PullResponseModel { consumer }
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {

@@ -29,15 +29,9 @@ impl MesgController {
         application: &str,
         invisibility_timeout: u32,
     ) -> MesgConsumer {
-        if !self
-            .storage
-            .is_application_queue_exists(queue, application)
-            .await
-        {
-            self.storage
-                .create_application_queue(queue, application)
-                .await;
-        }
+        self.storage
+            .create_application_queue(queue, application)
+            .await;
 
         info!(
             "consumer created for queue={}, application={}",

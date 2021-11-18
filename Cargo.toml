@@ -5,8 +5,8 @@ authors = ["ZOXEXIVO <zoxexivo@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.13.0", features = ["full"] }
-hyper = { version = "0.14.14", features = ["full"] }
+tokio = { version = "1.14.0", features = ["full"] }
+hyper = { version = "0.14.15", features = ["full"] }
 toml = "0.5.8"
 lz4 = "1.23.2"
 serde = "1.0.130"
