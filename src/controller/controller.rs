@@ -52,8 +52,8 @@ impl MesgController {
         self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
-        self.storage.commit(id, queue, application).await
+    pub async fn commit(&self, id: i64, queue: &str, application: &str, success: bool) -> bool {
+        self.storage.commit(id, queue, application, success).await
     }
 }
 

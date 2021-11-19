@@ -4,7 +4,6 @@ use std::collections::{HashMap, VecDeque};
 use crate::metrics::MetricsWriter;
 use bytes::Bytes;
 use chashmap::CHashMap;
-use color_eyre::owo_colors::OwoColorize;
 use log::info;
 use prost::alloc::collections::BTreeMap;
 use std::cmp::Ordering;
@@ -36,15 +35,6 @@ impl Storage {
         }
     }
 
-    pub async fn create_queue_if_not_exists(&self, queue: &str, application: &str) {
-        MetricsWriter::inc_queues_count_metric();
-
-        if !self.storage.contains_key(queue) {
-            info!("queue={} created", queue);
-            self.storage.insert(queue.into(), MessageStorage::new());
-        }
-    }
-
     pub async fn pop(
         &self,
         queue: &str,
@@ -60,7 +50,14 @@ impl Storage {
         None
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str) -> bool {
+    pub async fn commit(&self, id: i64, queue: &str, application: &str, success: bool) -> bool {
+        match success {
+            true => self.commit_inner(id, queue, application).await,
+            false => self.uncommit_inner(id, queue, application).await,
+        }
+    }
+
+    pub async fn commit_inner(&self, id: i64, queue: &str, application: &str) -> bool {
         if let Some(mut message_storage) = self.storage.get_mut(queue) {
             if let Ok(msg) = message_storage.commit(application, id).await {
                 return msg;
@@ -70,7 +67,7 @@ impl Storage {
         false
     }
 
-    pub async fn uncommit(&self, id: i64, queue: &str, application: &str) -> bool {
+    pub async fn uncommit_inner(&self, id: i64, queue: &str, application: &str) -> bool {
         if let Some(mut message_storage) = self.storage.get_mut(queue) {
             if let Ok(res) = message_storage.uncommit(application, id).await {
                 return res;

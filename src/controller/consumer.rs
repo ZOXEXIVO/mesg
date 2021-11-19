@@ -38,7 +38,7 @@ impl Consumer {
                     let item = ConsumerItem::from(messsage);
 
                     if let Err(err) = data_tx.send(item).await {
-                        if !storage.uncommit(id, &queue, &application).await {
+                        if !storage.uncommit_inner(id, &queue, &application).await {
                             error!(
                                 "uncommit error id={}, queue={}, application={}, err={}",
                                 id, &queue, &application, err

@@ -87,6 +87,7 @@ where
                 id: req.id,
                 queue: req.queue,
                 application: req.application,
+                success: req.success,
             })
             .await;
 

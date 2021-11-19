@@ -57,7 +57,7 @@ impl Mesg for MesgService {
         CommitResponseModel {
             success: self
                 .controller
-                .commit(request.id, &request.queue, &request.application)
+                .commit(request.id, &request.queue, &request.application, request.success)
                 .await,
         }
     }
@@ -91,6 +91,8 @@ pub struct CommitRequestModel {
     pub id: i64,
     pub queue: String,
     pub application: String,
+
+    pub success: bool,
 }
 
 pub struct CommitResponseModel {

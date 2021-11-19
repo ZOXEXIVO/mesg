@@ -38,6 +38,8 @@ pub struct CommitRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub application: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub success: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {
