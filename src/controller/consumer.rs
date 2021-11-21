@@ -1,5 +1,5 @@
 use crate::controller::ConsumerHandle;
-use crate::metrics::MetricsWriter;
+use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
@@ -135,7 +135,7 @@ impl From<Message> for ConsumerItem {
 
 impl Drop for MesgConsumer {
     fn drop(&mut self) {
-        MetricsWriter::decr_consumers_count_metric();
+        StaticMetricsWriter::decr_consumers_count_metric();
 
         info!("send shutdown message for consumer_id={}", self.id);
 

@@ -1,4 +1,4 @@
-use crate::metrics::MetricsWriter;
+use crate::metrics::StaticMetricsWriter;
 use crate::server::transport::proto::PROTOFILE;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
@@ -43,7 +43,7 @@ fn proto(_: Request<Body>) -> Result<Response<Body>, Infallible> {
 fn metrics(_: Request<Body>) -> Result<Response<Body>, Infallible> {
     let mut result = String::with_capacity(2048);
 
-    MetricsWriter::write(&mut result);
+    StaticMetricsWriter::write(&mut result);
 
     Ok(Response::new(Body::from(result)))
 }

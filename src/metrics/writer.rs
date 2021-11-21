@@ -4,12 +4,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static PUSH_METRIC: AtomicU64 = AtomicU64::new(0);
 static CONSUMERS_COUNT_METRIC: AtomicU64 = AtomicU64::new(0);
 static COMMIT_METRIC: AtomicU64 = AtomicU64::new(0);
-static QUEUES_COUNT_METRIC: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
-pub struct MetricsWriter;
+pub struct StaticMetricsWriter;
 
-impl MetricsWriter {
+impl StaticMetricsWriter {
     pub fn inc_push_metric() {
         PUSH_METRIC.fetch_add(1, Ordering::SeqCst);
     }
@@ -19,12 +18,8 @@ impl MetricsWriter {
     pub fn decr_consumers_count_metric() {
         CONSUMERS_COUNT_METRIC.fetch_sub(1, Ordering::SeqCst);
     }
-
     pub fn inc_commit_metric() {
         COMMIT_METRIC.fetch_add(1, Ordering::SeqCst);
-    }
-    pub fn inc_queues_count_metric() {
-        QUEUES_COUNT_METRIC.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn write(result: &mut String) {
@@ -63,18 +58,6 @@ impl MetricsWriter {
             result,
             "mesg_consumers_count {}",
             CONSUMERS_COUNT_METRIC.load(Ordering::SeqCst)
-        )
-        .unwrap();
-
-        writeln!(result).unwrap();
-
-        // mesg_queues_count
-        writeln!(result, "# HELP mesg_queues_count Number of queues count").unwrap();
-        writeln!(result, "# TYPE mesg_queues_count gauge").unwrap();
-        writeln!(
-            result,
-            "mesg_queues_count {}",
-            QUEUES_COUNT_METRIC.load(Ordering::SeqCst)
         )
         .unwrap();
     }

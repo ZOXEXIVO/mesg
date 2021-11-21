@@ -1,5 +1,5 @@
 use crate::controller::{MesgConsumer, MesgController};
-use crate::metrics::MetricsWriter;
+use crate::metrics::StaticMetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::info;
@@ -24,7 +24,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        MetricsWriter::inc_push_metric();
+        StaticMetricsWriter::inc_push_metric();
 
         PushResponseModel {
             success: self.controller.push(&request.queue, request.data).await,
@@ -32,7 +32,7 @@ impl Mesg for MesgService {
     }
 
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel {
-        MetricsWriter::inc_consumers_count_metric();
+        StaticMetricsWriter::inc_consumers_count_metric();
 
         let consumer = self
             .controller
@@ -52,12 +52,17 @@ impl Mesg for MesgService {
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        MetricsWriter::inc_commit_metric();
+        StaticMetricsWriter::inc_commit_metric();
 
         CommitResponseModel {
             success: self
                 .controller
-                .commit(request.id, &request.queue, &request.application, request.success)
+                .commit(
+                    request.id,
+                    &request.queue,
+                    &request.application,
+                    request.success,
+                )
                 .await,
         }
     }

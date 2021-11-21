@@ -1,3 +1,3 @@
 ﻿pub mod writer;
 
-pub use writer::MetricsWriter;
+pub use writer::StaticMetricsWriter;
