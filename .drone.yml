@@ -2,8 +2,8 @@ kind: pipeline
 name: default
 
 trigger:
-  event:
-      - tag
+  branch:
+    - master
 
 steps: 
   - name: build
@@ -15,9 +15,53 @@ steps:
     commands:
       - docker build --no-cache -t mesg:1.0.0.$$DRONE_BUILD_NUMBER -f "build/Mesg.Dockerfile" .
 
-  - name: clear
+  - name: test_cleanup
     image: docker:dind
     depends_on: [ build ]
+    privileged: true
+    failure: ignore
+    volumes:
+      - name: docker_sock
+        path: /var/run/docker.sock
+    commands:
+      - docker stop mesg-testing || true
+      - docker rm mesg-testing || true
+        
+  - name: test_deploy
+    image: docker:dind
+    depends_on: [ test_cleanup ]
+    privileged: true
+    failure: ignore
+    volumes:
+      - name: docker_sock
+        path: /var/run/docker.sock
+    commands:
+      - docker run -p 172.17.0.1:37000:35000 --name mest-testing mesg:1.0.0.$$DRONE_BUILD_NUMBER
+
+  - name: test_run
+    image: docker:latest
+    depends_on: [ test_deploy ]
+    volumes:
+      - name: docker_sock
+        path: /var/run/docker.sock
+    commands:
+      - docker build --no-cache -t mesg:1.0.0.$$DRONE_BUILD_NUMBER -f "Mesg.Testing.Dockerfile" .
+
+  - name: test_run_cleanup
+    image: docker:dind
+    depends_on: [ test_run ]
+    privileged: true
+    failure: ignore
+    volumes:
+      - name: docker_sock
+        path: /var/run/docker.sock
+    commands:
+      - docker stop mesg-testing || true
+      - docker rm mesg-testing || true
+
+  - name: clear
+    image: docker:dind
+    depends_on: [ test_run_cleanup ]
     privileged: true
     failure: ignore
     volumes:
