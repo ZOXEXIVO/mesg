@@ -3,6 +3,9 @@ mod grpc;
 #[cfg(test)]
 mod tests {
     use crate::grpc::{mesg_protocol_client::MesgProtocolClient, PullRequest, PushRequest};
+    use std::env;
+
+    const DEFAULT_MESG_URL: &'static str = "http://172.17.0.1:37000";
 
     #[tokio::test]
     async fn push_pull_once_success() {
@@ -83,8 +86,8 @@ mod tests {
     }
 
     async fn create_client() -> MesgProtocolClient<tonic::transport::Channel> {
-        MesgProtocolClient::connect("http://localhost:35000")
-            .await
-            .unwrap()
+        let mesg_url = env::var("MESG_URL").unwrap_or(String::from(DEFAULT_MESG_URL));
+
+        MesgProtocolClient::connect(mesg_url).await.unwrap()
     }
 }
