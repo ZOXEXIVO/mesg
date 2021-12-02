@@ -41,7 +41,7 @@ fn proto(_: Request<Body>) -> Result<Response<Body>, Infallible> {
 }
 
 fn metrics(_: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let mut result = String::with_capacity(2048);
+    let mut result = String::with_capacity(4096);
 
     StaticMetricsWriter::write(&mut result);
 

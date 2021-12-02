@@ -91,12 +91,10 @@ impl StaticMetricsWriter {
     }
 
     fn write_map(result: &mut String, title: &str, map: CHashMap<String, Arc<AtomicU64>>) {
-        write!(result, "{} {{ ", title).unwrap();
+        for (queue, val) in map.into_iter() {
+            let val = val.load(SeqCst);
 
-        for (key, val) in map.into_iter() {
-            write!(result, "{}=\"{}\",", key, val.load(SeqCst)).unwrap();
+            writeln!(result, "{} {{ queue=\"{}\" }} {}", title, queue, val).unwrap();
         }
-
-        writeln!(result, " }}").unwrap();
     }
 }
