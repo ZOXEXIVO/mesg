@@ -24,7 +24,7 @@ impl MesgService {
 #[async_trait]
 impl Mesg for MesgService {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel {
-        StaticMetricsWriter::inc_push_metric();
+        StaticMetricsWriter::inc_push_metric(&request.queue);
 
         PushResponseModel {
             success: self.controller.push(&request.queue, request.data).await,
@@ -32,7 +32,7 @@ impl Mesg for MesgService {
     }
 
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel {
-        StaticMetricsWriter::inc_consumers_count_metric();
+        StaticMetricsWriter::inc_consumers_count_metric(&request.queue);
 
         let consumer = self
             .controller
@@ -52,7 +52,7 @@ impl Mesg for MesgService {
     }
 
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
-        StaticMetricsWriter::inc_commit_metric();
+        StaticMetricsWriter::inc_commit_metric(&request.queue);
 
         CommitResponseModel {
             success: self

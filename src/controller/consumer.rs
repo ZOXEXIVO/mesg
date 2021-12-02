@@ -69,6 +69,7 @@ impl Consumer {
 
 pub struct MesgConsumer {
     pub id: u32,
+    pub queue: String,
     pub reciever: Receiver<ConsumerItem>,
     pub shudown_channel: UnboundedSender<u32>,
 }
@@ -76,11 +77,13 @@ pub struct MesgConsumer {
 impl MesgConsumer {
     pub fn new(
         id: u32,
+        queue: String,
         reciever: Receiver<ConsumerItem>,
         shudown_channel: UnboundedSender<u32>,
     ) -> Self {
         MesgConsumer {
             id,
+            queue,
             reciever,
             shudown_channel,
         }
@@ -106,7 +109,7 @@ impl Future for MesgConsumer {
 
 impl From<ConsumerHandle> for MesgConsumer {
     fn from(handle: ConsumerHandle) -> Self {
-        MesgConsumer::new(handle.id, handle.data_rx, handle.shutdown_tx)
+        MesgConsumer::new(handle.id,  handle.queue, handle.data_rx, handle.shutdown_tx)
     }
 }
 
@@ -135,7 +138,7 @@ impl From<Message> for ConsumerItem {
 
 impl Drop for MesgConsumer {
     fn drop(&mut self) {
-        StaticMetricsWriter::decr_consumers_count_metric();
+        StaticMetricsWriter::decr_consumers_count_metric(&self.queue);
 
         info!("send shutdown message for consumer_id={}", self.id);
 

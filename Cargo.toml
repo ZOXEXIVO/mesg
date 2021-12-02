@@ -25,6 +25,7 @@ color-eyre = "0.5.11"
 thiserror = "1.0.30"
 anyhow = "1.0.51"
 structopt = "0.3.25"
+lazy_static = "1.4.0"
 
 [build-dependencies]
 tonic-build = "0.6.0"

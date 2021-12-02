@@ -1,7 +1,6 @@
 ﻿use crate::controller::Consumer;
-use log::info;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{RwLock};
 
 pub struct ConsumerCoordinator;
 

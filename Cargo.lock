@@ -622,6 +622,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hyper",
+ "lazy_static",
  "log",
  "lz4",
  "oneshot",

@@ -6,8 +6,7 @@ use bytes::Bytes;
 use log::info;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::mpsc::{channel, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{channel, Receiver, UnboundedSender};
 use tokio::sync::RwLock;
 
 pub struct MesgController {
@@ -107,6 +106,7 @@ impl ConsumerCollection {
 
         ConsumerHandle {
             id: consumer_id,
+            queue: queue.into(),
             data_rx: consumer_data_rx,
             shutdown_tx: self.shutdown_tx.clone(),
         }
@@ -119,6 +119,7 @@ impl ConsumerCollection {
 
 pub struct ConsumerHandle {
     pub id: u32,
+    pub queue: String,
     pub data_rx: Receiver<ConsumerItem>,
     pub shutdown_tx: UnboundedSender<u32>,
 }
