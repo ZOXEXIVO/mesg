@@ -1,4 +1,4 @@
-FROM rust:1.56.1 as build
+FROM rust:1.57 as build
 WORKDIR /src
 
 COPY ./ ./
@@ -9,7 +9,7 @@ RUN cargo test
 
 RUN cargo build --release
 
-FROM rust:1.56.1-slim
+FROM rust:1.57-slim
 
 WORKDIR /app
 

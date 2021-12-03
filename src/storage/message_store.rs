@@ -12,7 +12,7 @@ use tokio::sync::{AcquireError, Mutex, RwLock};
 // Message storage
 pub struct MessageStore {
     application_queues: Arc<RwLock<HashMap<String, Mutex<VecDeque<Message>>>>>,
-    //uncommited_store: Arc<RwLock<HashMap<String, Mutex<UncommitedStorage>>>>,
+    uncommited_store: Arc<RwLock<HashMap<String, Mutex<UncommitedStorage>>>>,
     notify: Sender<(String, i64)>,
 }
 
@@ -22,7 +22,7 @@ impl MessageStore {
 
         let storage = MessageStore {
             application_queues: Arc::new(RwLock::new(HashMap::new())),
-            //uncommited_store: Arc::new(RwLock::new(HashMap::new())),
+            uncommited_store: Arc::new(RwLock::new(HashMap::new())),
             notify: restore_tx,
         };
 
@@ -72,21 +72,19 @@ impl MessageStore {
         application: &str,
         id: i64,
     ) -> Result<bool, MessageStorageError> {
-        return Ok(true);
+        let uncommited_store_read_guard = self.uncommited_store.read().await;
 
-        // let uncommited_store_read_guard = self.uncommited_store.read().await;
-        //
-        // if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
-        //     let mut uncommited_store_write_guard = uncommited_store.lock().await;
-        //
-        //     uncommited_store_write_guard.remove(id);
-        //
-        //     info!("message commited: id={}", id);
-        //
-        //     return Ok(true);
-        // }
-        //
-        // Ok(false)
+        if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
+            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+
+            uncommited_store_write_guard.remove(id);
+
+            info!("message commited: id={}", id);
+
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     pub async fn uncommit(
@@ -94,36 +92,34 @@ impl MessageStore {
         application: &str,
         id: i64,
     ) -> Result<bool, MessageStorageError> {
-        return Ok(true);
+        let uncommited_store_read_guard = self.uncommited_store.read().await;
+        if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
+            info!("begin uncommited_store.lock");
+            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+            info!("end uncommited_store.lock");
 
-        // let uncommited_store_read_guard = self.uncommited_store.read().await;
-        // if let Some(uncommited_store) = uncommited_store_read_guard.get(application) {
-        //     info!("begin uncommited_store.lock");
-        //     let mut uncommited_store_write_guard = uncommited_store.lock().await;
-        //     info!("end uncommited_store.lock");
-        //
-        //     if let Some(message) = uncommited_store_write_guard.take(id) {
-        //         info!("begin application_queues.read");
-        //         let application_queue_read_guard = self.application_queues.read().await;
-        //         info!("end application_queues.read");
-        //
-        //         if let Some(application_queue) = application_queue_read_guard.get(application) {
-        //             info!("begin application_queue.lock");
-        //             let mut application_queue_write_guard = application_queue.lock().await;
-        //             info!("end application_queue.lock");
-        //
-        //             let id = message.id;
-        //
-        //             application_queue_write_guard.push_back(message);
-        //
-        //             info!("message uncommited: {}", id);
-        //
-        //             return Ok(true);
-        //         }
-        //     }
-        // }
-        //
-        // Ok(false)
+            if let Some(message) = uncommited_store_write_guard.take(id) {
+                info!("begin application_queues.read");
+                let application_queue_read_guard = self.application_queues.read().await;
+                info!("end application_queues.read");
+
+                if let Some(application_queue) = application_queue_read_guard.get(application) {
+                    info!("begin application_queue.lock");
+                    let mut application_queue_write_guard = application_queue.lock().await;
+                    info!("end application_queue.lock");
+
+                    let id = message.id;
+
+                    application_queue_write_guard.push_back(message);
+
+                    info!("message uncommited: {}", id);
+
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     pub async fn push(&mut self, message: Message) -> Result<bool, MessageStorageError> {
@@ -155,62 +151,60 @@ impl MessageStore {
             Some(application_queue) => {
                 let mut app_queue_guard = application_queue.lock().await;
                 if let Some(message) = app_queue_guard.pop_front() {
-                    return Ok(Some(message));
+                    let uncommited_store_read_guard = self.uncommited_store.read().await;
 
-                    // let uncommited_store_read_guard = self.uncommited_store.read().await;
-                    //
-                    // info!("end pop.uncommited_store.read");
-                    //
-                    // match uncommited_store_read_guard.get(application) {
-                    //     Some(uncommited_store) => {
-                    //         info!("begin pop.uncommited_store.lock");
-                    //         let mut uncommited_store_write_guard = uncommited_store.lock().await;
-                    //         info!("end pop.uncommited_store.lock");
-                    //
-                    //         uncommited_store_write_guard.add(&message);
-                    //
-                    //         // start tokio task to restore item
-                    //         self.start_restore_task(
-                    //             (String::from(application), message.id),
-                    //             invisibility_timeout,
-                    //         );
-                    //
-                    //         info!(
-                    //             "add to uncommited_store id={}, application={}",
-                    //             message.id, application
-                    //         );
-                    //
-                    //         Ok(Some(message))
-                    //     }
-                    //     None => {
-                    //         drop(uncommited_store_read_guard);
-                    //
-                    //         info!(
-                    //             "no uncommited_store, adding new id={}, application={}",
-                    //             message.id, application
-                    //         );
-                    //
-                    //         info!("begin uncommited_store.write");
-                    //         let mut uncommited_store_write_guard =
-                    //             self.uncommited_store.write().await;
-                    //         info!("end uncommited_store.write");
-                    //
-                    //         let mut uncommited_store = UncommitedStorage::new();
-                    //
-                    //         uncommited_store.add(&message);
-                    //
-                    //         uncommited_store_write_guard
-                    //             .insert(application.into(), Mutex::new(uncommited_store));
-                    //
-                    //         // start tokio task to restore item
-                    //         self.start_restore_task(
-                    //             (String::from(application), message.id),
-                    //             invisibility_timeout,
-                    //         );
-                    //
-                    //         Ok(Some(message))
-                    //     }
-                    // }
+                    info!("end pop.uncommited_store.read");
+
+                    match uncommited_store_read_guard.get(application) {
+                        Some(uncommited_store) => {
+                            info!("begin pop.uncommited_store.lock");
+                            let mut uncommited_store_write_guard = uncommited_store.lock().await;
+                            info!("end pop.uncommited_store.lock");
+
+                            uncommited_store_write_guard.add(&message);
+
+                            // start tokio task to restore item
+                            self.start_restore_task(
+                                (String::from(application), message.id),
+                                invisibility_timeout,
+                            );
+
+                            info!(
+                                "add to uncommited_store id={}, application={}",
+                                message.id, application
+                            );
+
+                            Ok(Some(message))
+                        }
+                        None => {
+                            drop(uncommited_store_read_guard);
+
+                            info!(
+                                "no uncommited_store, adding new id={}, application={}",
+                                message.id, application
+                            );
+
+                            info!("begin uncommited_store.write");
+                            let mut uncommited_store_write_guard =
+                                self.uncommited_store.write().await;
+                            info!("end uncommited_store.write");
+
+                            let mut uncommited_store = UncommitedStorage::new();
+
+                            uncommited_store.add(&message);
+
+                            uncommited_store_write_guard
+                                .insert(application.into(), Mutex::new(uncommited_store));
+
+                            // start tokio task to restore item
+                            self.start_restore_task(
+                                (String::from(application), message.id),
+                                invisibility_timeout,
+                            );
+
+                            Ok(Some(message))
+                        }
+                    }
                 } else {
                     Ok(None)
                 }
