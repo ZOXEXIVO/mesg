@@ -11,7 +11,6 @@ lazy_static! {
     static ref PUSH_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
     static ref CONSUMERS_COUNT_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
     static ref COMMIT_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
-    static ref QUEUES_COUNT_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
 }
 
 #[derive(Clone)]
@@ -20,37 +19,29 @@ pub struct StaticMetricsWriter;
 impl StaticMetricsWriter {
     pub fn inc_push_metric(queue: &str) {
         if let Some(write_guard) = PUSH_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::SeqCst);
+            write_guard.fetch_add(1, Ordering::Relaxed);
         } else {
             PUSH_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
         }
     }
     pub fn inc_consumers_count_metric(queue: &str) {
         if let Some(write_guard) = CONSUMERS_COUNT_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::SeqCst);
+            write_guard.fetch_add(1, Ordering::Relaxed);
         } else {
             CONSUMERS_COUNT_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
         }
     }
     pub fn decr_consumers_count_metric(queue: &str) {
         if let Some(write_guard) = CONSUMERS_COUNT_METRIC.get_mut(queue) {
-            write_guard.fetch_sub(1, Ordering::SeqCst);
+            write_guard.fetch_sub(1, Ordering::Relaxed);
         }
     }
 
     pub fn inc_commit_metric(queue: &str) {
         if let Some(write_guard) = COMMIT_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::SeqCst);
+            write_guard.fetch_add(1, Ordering::Relaxed);
         } else {
             COMMIT_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
-        }
-    }
-
-    pub fn inc_queues_count_metric(queue: &str) {
-        if let Some(write_guard) = QUEUES_COUNT_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::SeqCst);
-        } else {
-            QUEUES_COUNT_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
         }
     }
 
@@ -83,11 +74,6 @@ impl StaticMetricsWriter {
         );
 
         writeln!(result).unwrap();
-
-        // mesg_queues_count
-        writeln!(result, "# HELP mesg_queues_count Number of queues count").unwrap();
-        writeln!(result, "# TYPE mesg_queues_count gauge").unwrap();
-        Self::write_map(result, "mesg_queues_count", QUEUES_COUNT_METRIC.clone());
     }
 
     fn write_map(result: &mut String, title: &str, map: CHashMap<String, Arc<AtomicU64>>) {

@@ -1,6 +1,6 @@
+use self::sequence_generator::SequenceGenerator;
 use crate::storage::message::Message;
 use crate::storage::message_store::{MessageStorageError, MessageStore};
-use crate::storage::sequence_generator::SequenceGenerator;
 use bytes::Bytes;
 use chashmap::CHashMap;
 use std::sync::Arc;
@@ -112,4 +112,18 @@ impl Clone for Storage {
 pub enum StorageError {
     #[error("Storage lock error")]
     LockError(#[from] MessageStorageError),
+}
+
+mod sequence_generator {
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    static CURRENT_SEQUENCE_VALUE: AtomicI64 = AtomicI64::new(0);
+
+    pub struct SequenceGenerator;
+
+    impl SequenceGenerator {
+        pub fn generate() -> i64 {
+            CURRENT_SEQUENCE_VALUE.fetch_add(1, Ordering::Relaxed)
+        }
+    }
 }
