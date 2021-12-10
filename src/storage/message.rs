@@ -7,6 +7,16 @@ pub struct Message {
     pub delivered: bool,
 }
 
+impl Message {
+    pub fn new(id: i64, data: Bytes) -> Self {
+        Message {
+            id,
+            data: Bytes::clone(&data),
+            delivered: false,
+        }
+    }
+}
+
 impl Ord for Message {
     fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
@@ -24,16 +34,6 @@ impl Eq for Message {}
 impl PartialOrd<Message> for Message {
     fn partial_cmp(&self, other: &Message) -> Option<Ordering> {
         self.id.partial_cmp(&other.id)
-    }
-}
-
-impl Message {
-    pub fn new(id: i64, data: Bytes) -> Self {
-        Message {
-            id,
-            data: Bytes::clone(&data),
-            delivered: false,
-        }
     }
 }
 
