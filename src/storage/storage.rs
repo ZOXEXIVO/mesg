@@ -88,7 +88,7 @@ impl Storage {
                 return store.create_application_queue(application).await;
             }
             None => {
-                let message_store = MessageStore::new();
+                let message_store = MessageStore::from_filename(queue.into()).await;
 
                 let result = message_store.create_application_queue(application).await;
 
