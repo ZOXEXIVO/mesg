@@ -30,12 +30,12 @@ impl Consumer {
             let mut attempt: u16 = 0;
 
             loop {
-                if let Some(messsage) = storage
+                if let Some(message) = storage
                     .pop(&queue, &application, invisibility_timeout)
                     .await
                 {
-                    let id = messsage.id;
-                    let item = ConsumerItem::from(messsage);
+                    let id = message.id;
+                    let item = ConsumerItem::from(message);
 
                     if let Err(err) = data_tx.send(item).await {
                         if !storage.uncommit_inner(id, &queue, &application).await {

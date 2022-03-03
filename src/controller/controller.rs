@@ -11,14 +11,14 @@ use tokio::sync::RwLock;
 
 pub struct MesgController {
     storage: Arc<Storage>,
-    consummers: ConsumerCollection,
+    consumers: ConsumerCollection,
 }
 
 impl MesgController {
     pub fn new(storage: Arc<Storage>) -> Self {
         MesgController {
             storage,
-            consummers: ConsumerCollection::new(),
+            consumers: ConsumerCollection::new(),
         }
     }
 
@@ -40,7 +40,7 @@ impl MesgController {
         let storage = Arc::clone(&self.storage);
 
         let consumer_handle = self
-            .consummers
+            .consumers
             .add_consumer(storage, queue, application, invisibility_timeout)
             .await;
 
