@@ -9,6 +9,7 @@ mod storage;
 use env_logger::Env;
 
 use crate::server::{MesgServer, MesgServerOptions};
+use crate::storage::RingBufferFile;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -24,18 +25,24 @@ pub struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    color_eyre::install().unwrap();
+    let file = RingBufferFile::new(String::from("1.data")).await;
 
-    init_logger();
+    let data = [0; 10];
 
-    let options = Opt::from_args();
-    let server_options = MesgServerOptions {
-        db_path: options.db_path,
-        port: options.port,
-        metric_port: options.metric_port,
-    };
+    file.write(&data).await;
 
-    MesgServer::new().run(server_options).await?;
+    // color_eyre::install().unwrap();
+    //
+    // init_logger();
+    //
+    // let options = Opt::from_args();
+    // let server_options = MesgServerOptions {
+    //     db_path: options.db_path,
+    //     port: options.port,
+    //     metric_port: options.metric_port,
+    // };
+    //
+    // MesgServer::new().run(server_options).await?;
 
     Ok(())
 }

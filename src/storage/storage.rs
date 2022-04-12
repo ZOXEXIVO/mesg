@@ -1,13 +1,13 @@
 use self::sequence_generator::SequenceGenerator;
 use crate::storage::message::Message;
-use crate::storage::message_store::{MessageStorageError, MessageStore};
 use bytes::Bytes;
 use chashmap::CHashMap;
+use sled::Db;
 use std::sync::Arc;
 use thiserror::Error;
 
 pub struct Storage {
-    store: Arc<CHashMap<String, MessageStore>>,
+    store: Arc<CHashMap<String, Db>>,
 }
 
 impl Storage {

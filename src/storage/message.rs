@@ -2,13 +2,13 @@
 use std::cmp::Ordering;
 
 pub struct Message {
-    pub id: i64,
+    pub id: u64,
     pub data: Bytes,
     pub delivered: bool,
 }
 
 impl Message {
-    pub fn new(id: i64, data: Bytes) -> Self {
+    pub fn new(id: u64, data: Bytes) -> Self {
         Message {
             id,
             data: Bytes::clone(&data),
