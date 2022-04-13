@@ -2,7 +2,7 @@ use self::sequence_generator::SequenceGenerator;
 use crate::storage::message::Message;
 use bytes::Bytes;
 use chashmap::CHashMap;
-use sled::Db;
+use sled::{Db, IVec};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -18,13 +18,55 @@ impl Storage {
     }
 
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
-        let message_id = SequenceGenerator::generate();
-
         let message = Message::new(message_id, data);
 
         match self.store.get_mut(queue) {
-            Some(mut item) => Ok(item.push(message).await?),
-            None => Ok(false),
+            Some(mut item) => {
+                
+            },
+            None => { 
+                
+            },
+        }
+    }
+    
+    fn get_identity(&self, db: Db) -> u64 {
+        const IDENTITY_KEY: &str = "identity";
+        
+        let identity_value = db.get(IDENTITY_KEY).unwrap();
+        
+        match identity_value {
+            Some(identity) => {
+                let updated_val = db
+                    .fetch_and_update(IDENTITY_KEY, increment)
+                    .unwrap().unwrap();
+                
+                return 0;
+            },
+            None => {
+                let initial_id: u64 = 0;
+                
+                db.insert(IDENTITY_KEY, initial_id.to_ne_bytes());
+                
+                return initial_id;
+            }
+        }
+
+        fn u64_to_ivec(number: u64) -> IVec {
+            IVec::from(number.to_be_bytes().to_vec())
+        }
+        
+        fn increment(old: Option<&[u8]>) -> Option<Vec<u8>> {
+            let number = match old {
+                Some(bytes) => {
+                    let array: [u8; 8] = bytes.try_into().unwrap();
+                    let number = u64::from_be_bytes(array);
+                    number + 1
+                }
+                None => 0,
+            };
+
+            Some(number.to_be_bytes().to_vec())
         }
     }
 
@@ -110,20 +152,6 @@ impl Clone for Storage {
 
 #[derive(Error, Debug)]
 pub enum StorageError {
-    #[error("Storage lock error")]
-    LockError(#[from] MessageStorageError),
-}
-
-mod sequence_generator {
-    use std::sync::atomic::{AtomicI64, Ordering};
-
-    static CURRENT_SEQUENCE_VALUE: AtomicI64 = AtomicI64::new(0);
-
-    pub struct SequenceGenerator;
-
-    impl SequenceGenerator {
-        pub fn generate() -> i64 {
-            CURRENT_SEQUENCE_VALUE.fetch_add(1, Ordering::Relaxed)
-        }
-    }
+    // #[error("Storage lock error")]
+    // LockError(#[from] MessageStorageError),
 }
