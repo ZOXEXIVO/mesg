@@ -93,7 +93,7 @@ pub struct PullResponseModel {
 // Commit
 
 pub struct CommitRequestModel {
-    pub id: i64,
+    pub id: u64,
     pub queue: String,
     pub application: String,
 

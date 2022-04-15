@@ -28,10 +28,6 @@ impl MesgController {
         application: &str,
         invisibility_timeout: u32,
     ) -> MesgConsumer {
-        self.storage
-            .create_application_queue(queue, application)
-            .await;
-
         info!(
             "consumer created for queue={}, application={}",
             queue, application
@@ -51,7 +47,7 @@ impl MesgController {
         self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str, success: bool) -> bool {
+    pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
         self.storage.commit(id, queue, application, success).await
     }
 }

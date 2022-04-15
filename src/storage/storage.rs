@@ -1,4 +1,3 @@
-use self::sequence_generator::SequenceGenerator;
 use crate::storage::message::Message;
 use bytes::Bytes;
 use chashmap::CHashMap;
@@ -18,127 +17,114 @@ impl Storage {
     }
 
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
-        let message = Message::new(message_id, data);
+        return match self.store.get_mut(queue) {
+            Some(db) => {
+                let (identity_val, identity_vec) = get_identity(&db);
+                let message = Message::new(identity_val, data);
 
-        match self.store.get_mut(queue) {
-            Some(mut item) => {
-                
-            },
-            None => { 
-                
-            },
-        }
-    }
-    
-    fn get_identity(&self, db: Db) -> u64 {
-        const IDENTITY_KEY: &str = "identity";
-        
-        let identity_value = db.get(IDENTITY_KEY).unwrap();
-        
-        match identity_value {
-            Some(identity) => {
-                let updated_val = db
-                    .fetch_and_update(IDENTITY_KEY, increment)
-                    .unwrap().unwrap();
-                
-                return 0;
-            },
-            None => {
-                let initial_id: u64 = 0;
-                
-                db.insert(IDENTITY_KEY, initial_id.to_ne_bytes());
-                
-                return initial_id;
-            }
-        }
-
-        fn u64_to_ivec(number: u64) -> IVec {
-            IVec::from(number.to_be_bytes().to_vec())
-        }
-        
-        fn increment(old: Option<&[u8]>) -> Option<Vec<u8>> {
-            let number = match old {
-                Some(bytes) => {
-                    let array: [u8; 8] = bytes.try_into().unwrap();
-                    let number = u64::from_be_bytes(array);
-                    number + 1
+                for tree in &db.tree_names() {
+                    db.open_tree(tree)
+                        .unwrap()
+                        .insert(&identity_vec, message.clone().data.to_vec())
+                        .unwrap();
                 }
-                None => 0,
-            };
 
-            Some(number.to_be_bytes().to_vec())
+                Ok(true)
+            }
+            None => Ok(true),
+        };
+
+        fn get_identity(db: &Db) -> (u64, IVec) {
+            const IDENTITY_KEY: &str = "identity";
+
+            let mut current_value = 0;
+
+            let new_value = db
+                .fetch_and_update(IDENTITY_KEY, |old| {
+                    let number = match old {
+                        Some(bytes) => {
+                            let array: [u8; 8] = bytes.try_into().unwrap();
+                            let number = u64::from_be_bytes(array);
+                            number + 1
+                        }
+                        None => 0,
+                    };
+
+                    current_value = number;
+
+                    Some(number.to_be_bytes().to_vec())
+                })
+                .unwrap()
+                .unwrap();
+
+            (current_value, new_value)
         }
     }
 
-    pub async fn pop(
-        &self,
-        queue: &str,
-        application: &str,
-        invisibility_timeout: u32,
-    ) -> Option<Message> {
-        if let Some(mut store) = self.store.get_mut(queue) {
-            if let Ok(msg) = store.pop(application, invisibility_timeout).await {
-                return msg;
+    fn u64_to_ivec(number: u64) -> IVec {
+        IVec::from(number.to_be_bytes().to_vec())
+    }
+
+    pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {
+        if let Some(db) = self.store.get_mut(queue) {
+            let tree = db.open_tree(&application).unwrap();
+            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+
+            if let Ok(popped_item) = tree.pop_min() {
+                if let Some((k, v)) = popped_item {
+                    uncommited_tree.insert(k.clone(), v.clone());
+
+                    let key_bytes: Vec<u8> = k.to_vec();
+                    let val_bytes: Vec<u8> = v.to_vec();
+
+                    let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
+
+                    return Some(Message::new(id, Bytes::from(val_bytes)));
+                }
             }
         }
 
         None
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str, success: bool) -> bool {
+    pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
         match success {
             true => self.commit_inner(id, queue, application).await,
             false => self.uncommit_inner(id, queue, application).await,
         }
     }
 
-    pub async fn commit_inner(&self, id: i64, queue: &str, application: &str) -> bool {
-        if let Some(mut store) = self.store.get_mut(queue) {
-            if let Ok(msg) = store.commit(application, id).await {
-                return msg;
+    pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+        if let Some(db) = self.store.get_mut(queue) {
+            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+
+            let id_vec = Self::u64_to_ivec(id);
+
+            if let Ok(removed) = uncommited_tree.remove(id_vec) {
+                if removed.is_some() {
+                    return true;
+                }
             }
         }
 
         false
     }
 
-    pub async fn uncommit_inner(&self, id: i64, queue: &str, application: &str) -> bool {
-        if let Some(mut store) = self.store.get_mut(queue) {
-            if let Ok(res) = store.uncommit(application, id).await {
-                return res;
+    pub async fn uncommit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+        if let Some(db) = self.store.get_mut(queue) {
+            let tree = db.open_tree(&application).unwrap();
+            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+
+            let id_vec = Self::u64_to_ivec(id);
+
+            if let Ok(removed) = uncommited_tree.remove(id_vec.clone()) {
+                if let Some(removed_message) = removed {
+                    tree.insert(id_vec, removed_message);
+                }
             }
         }
 
         false
-    }
-
-    async fn is_application_queue_exists(&self, queue: &str, application: &str) -> bool {
-        if let Some(store) = self.store.get(queue) {
-            return store.is_application_exists(application).await;
-        }
-
-        false
-    }
-
-    pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
-        if self.is_application_queue_exists(queue, application).await {
-            return false;
-        }
-
-        match self.store.get_mut(queue) {
-            Some(store) => {
-                return store.create_application_queue(application).await;
-            }
-            None => {
-                let message_store = MessageStore::from_filename(queue.into()).await;
-
-                let result = message_store.create_application_queue(application).await;
-
-                self.store.insert(queue.into(), message_store);
-
-                result
-            }
-        }
     }
 }
 
@@ -153,5 +139,5 @@ impl Clone for Storage {
 #[derive(Error, Debug)]
 pub enum StorageError {
     // #[error("Storage lock error")]
-    // LockError(#[from] MessageStorageError),
+// LockError(#[from] MessageStorageError),
 }

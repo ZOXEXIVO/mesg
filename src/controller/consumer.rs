@@ -30,10 +30,7 @@ impl Consumer {
             let mut attempt: u16 = 0;
 
             loop {
-                if let Some(message) = storage
-                    .pop(&queue, &application, invisibility_timeout)
-                    .await
-                {
+                if let Some(message) = storage.pop(&queue, &application).await {
                     let id = message.id;
                     let item = ConsumerItem::from(message);
 
@@ -109,12 +106,12 @@ impl Future for MesgConsumer {
 
 impl From<ConsumerHandle> for MesgConsumer {
     fn from(handle: ConsumerHandle) -> Self {
-        MesgConsumer::new(handle.id,  handle.queue, handle.data_rx, handle.shutdown_tx)
+        MesgConsumer::new(handle.id, handle.queue, handle.data_rx, handle.shutdown_tx)
     }
 }
 
 pub struct ConsumerItem {
-    pub id: i64,
+    pub id: u64,
     pub data: Bytes,
 }
 
