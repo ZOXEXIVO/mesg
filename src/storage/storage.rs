@@ -3,7 +3,9 @@ use bytes::Bytes;
 use chashmap::CHashMap;
 use sled::{Db, IVec};
 use std::sync::Arc;
+use structopt::clap::App;
 use thiserror::Error;
+use crate::storage::NameUtils;
 
 pub struct Storage {
     store: Arc<CHashMap<String, Db>>,
@@ -67,12 +69,14 @@ impl Storage {
 
     pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {
         if let Some(db) = self.store.get_mut(queue) {
-            let tree = db.open_tree(&application).unwrap();
-            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+            let queue_names = NameUtils::application(application);
+            
+            let tree = db.open_tree(queue_names.default()).unwrap();
+            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
 
             if let Ok(popped_item) = tree.pop_min() {
                 if let Some((k, v)) = popped_item {
-                    uncommited_tree.insert(k.clone(), v.clone());
+                    uncommitted_tree.insert(k.clone(), v.clone()).unwrap();
 
                     let key_bytes: Vec<u8> = k.to_vec();
                     let val_bytes: Vec<u8> = v.to_vec();
@@ -96,11 +100,13 @@ impl Storage {
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         if let Some(db) = self.store.get_mut(queue) {
-            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+            let queue_names = NameUtils::application(application);
+
+            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
 
             let id_vec = Self::u64_to_ivec(id);
 
-            if let Ok(removed) = uncommited_tree.remove(id_vec) {
+            if let Ok(removed) = uncommitted_tree.remove(id_vec) {
                 if removed.is_some() {
                     return true;
                 }
@@ -112,14 +118,16 @@ impl Storage {
 
     pub async fn uncommit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         if let Some(db) = self.store.get_mut(queue) {
-            let tree = db.open_tree(&application).unwrap();
-            let uncommited_tree = db.open_tree(&format!("{application}_uncommited")).unwrap();
+            let queue_names = NameUtils::application(application);
+            
+            let tree = db.open_tree(queue_names.default()).unwrap();
+            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
 
             let id_vec = Self::u64_to_ivec(id);
 
-            if let Ok(removed) = uncommited_tree.remove(id_vec.clone()) {
+            if let Ok(removed) = uncommitted_tree.remove(id_vec.clone()) {
                 if let Some(removed_message) = removed {
-                    tree.insert(id_vec, removed_message);
+                    tree.insert(id_vec, removed_message).unwrap();
                 }
             }
         }
