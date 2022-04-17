@@ -1,11 +1,10 @@
 use crate::storage::message::Message;
+use crate::storage::NameUtils;
 use bytes::Bytes;
 use chashmap::CHashMap;
-use sled::{Db, IVec};
+use sled::{Db, IVec, Subscriber};
 use std::sync::Arc;
-use structopt::clap::App;
 use thiserror::Error;
-use crate::storage::NameUtils;
 
 pub struct Storage {
     store: Arc<CHashMap<String, Db>>,
@@ -18,23 +17,45 @@ impl Storage {
         }
     }
 
+    pub fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
+        if let Some(db) = self.store.get_mut(queue) {
+            let queue_names = NameUtils::application(application);
+
+            let tree = db.open_tree(queue_names.default()).unwrap();
+
+            return Some(tree.watch_prefix(vec![]));
+        }
+
+        None
+    }
+
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
-        return match self.store.get_mut(queue) {
+        match self.store.get_mut(queue) {
             Some(db) => {
-                let (identity_val, identity_vec) = get_identity(&db);
-                let message = Message::new(identity_val, data);
-
-                for tree in &db.tree_names() {
-                    db.open_tree(tree)
-                        .unwrap()
-                        .insert(&identity_vec, message.clone().data.to_vec())
-                        .unwrap();
-                }
-
-                Ok(true)
+                push_internal(&db, data).await;
             }
-            None => Ok(true),
+            None => {
+                let db = sled::open(format!("{queue}.mesg")).unwrap();
+
+                push_internal(&db, data).await;
+
+                self.store.insert(String::from(queue), db);
+            }
         };
+
+        return Ok(true);
+
+        async fn push_internal(db: &Db, data: Bytes) {
+            let (identity_val, identity_vec) = get_identity(&db);
+            let message = Message::new(identity_val, data);
+
+            for tree in &db.tree_names() {
+                db.open_tree(tree)
+                    .unwrap()
+                    .insert(&identity_vec, message.clone().data.to_vec())
+                    .unwrap();
+            }
+        }
 
         fn get_identity(db: &Db) -> (u64, IVec) {
             const IDENTITY_KEY: &str = "identity";
@@ -63,19 +84,15 @@ impl Storage {
         }
     }
 
-    fn u64_to_ivec(number: u64) -> IVec {
-        IVec::from(number.to_be_bytes().to_vec())
-    }
-
     pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {
-        if let Some(db) = self.store.get_mut(queue) {
-            let queue_names = NameUtils::application(application);
-            
-            let tree = db.open_tree(queue_names.default()).unwrap();
-            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
+        return match self.store.get_mut(queue) {
+            Some(db) => {
+                let queue_names = NameUtils::application(application);
 
-            if let Ok(popped_item) = tree.pop_min() {
-                if let Some((k, v)) = popped_item {
+                let tree = db.open_tree(queue_names.default()).unwrap();
+                let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
+
+                if let Ok(Some((k, v))) = tree.pop_min() {
                     uncommitted_tree.insert(k.clone(), v.clone()).unwrap();
 
                     let key_bytes: Vec<u8> = k.to_vec();
@@ -85,10 +102,11 @@ impl Storage {
 
                     return Some(Message::new(id, Bytes::from(val_bytes)));
                 }
-            }
-        }
 
-        None
+                return None;
+            }
+            None => None,
+        };
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
@@ -99,40 +117,44 @@ impl Storage {
     }
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        if let Some(db) = self.store.get_mut(queue) {
-            let queue_names = NameUtils::application(application);
+        match self.store.get_mut(queue) {
+            Some(db) => {
+                let queue_names = NameUtils::application(application);
 
-            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
+                let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
 
-            let id_vec = Self::u64_to_ivec(id);
+                let id_vec = IVec::from(id.to_be_bytes().to_vec());
 
-            if let Ok(removed) = uncommitted_tree.remove(id_vec) {
-                if removed.is_some() {
-                    return true;
+                if let Ok(removed) = uncommitted_tree.remove(id_vec) {
+                    if removed.is_some() {
+                        return true;
+                    }
                 }
-            }
-        }
 
-        false
+                false
+            }
+            None => false,
+        }
     }
 
     pub async fn uncommit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        if let Some(db) = self.store.get_mut(queue) {
-            let queue_names = NameUtils::application(application);
-            
-            let tree = db.open_tree(queue_names.default()).unwrap();
-            let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
+        match self.store.get_mut(queue) {
+            Some(db) => {
+                let queue_names = NameUtils::application(application);
 
-            let id_vec = Self::u64_to_ivec(id);
+                let tree = db.open_tree(queue_names.default()).unwrap();
+                let uncommitted_tree = db.open_tree(queue_names.uncommited()).unwrap();
 
-            if let Ok(removed) = uncommitted_tree.remove(id_vec.clone()) {
-                if let Some(removed_message) = removed {
+                let id_vec = IVec::from(id.to_be_bytes().to_vec());
+
+                if let Ok(Some(removed_message)) = uncommitted_tree.remove(id_vec.clone()) {
                     tree.insert(id_vec, removed_message).unwrap();
                 }
-            }
-        }
 
-        false
+                false
+            }
+            None => false,
+        }
     }
 }
 

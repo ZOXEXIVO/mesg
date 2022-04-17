@@ -3,6 +3,7 @@ use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
+use sled::Subscriber;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -26,36 +27,49 @@ impl Consumer {
     ) -> Self {
         let consumer = Consumer { id };
 
+        let storage = Arc::clone(&storage);
+
+        const SUBSCRIBTION_DELAY: u64 = 100_u64;
+
         tokio::spawn(async move {
-            let mut attempt: u16 = 0;
+            let mut subscriber: Option<Subscriber>;
 
             loop {
-                if let Some(message) = storage.pop(&queue, &application).await {
-                    let id = message.id;
-                    let item = ConsumerItem::from(message);
+                subscriber = storage.subscribe(&queue, &application);
 
-                    if let Err(err) = data_tx.send(item).await {
-                        if !storage.uncommit_inner(id, &queue, &application).await {
-                            error!(
-                                "uncommit error id={}, queue={}, application={}, err={}",
-                                id, &queue, &application, err
-                            );
+                if subscriber.is_some() {
+                    info!(
+                        "subscribed to queue={}, application={}, consumer_id={}",
+                        &queue, &application, consumer.id
+                    );
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_millis(SUBSCRIBTION_DELAY)).await;
+
+                info!(
+                    "waiting for data subscriber {} ms, consumer_id={}",
+                    SUBSCRIBTION_DELAY, consumer.id
+                );
+            }
+
+            let mut data_subscribtion = subscriber.as_mut().unwrap();
+
+            while let Some(event) = (&mut data_subscribtion).await {
+                if let sled::Event::Insert { key: _, value: _ } = event {
+                    if let Some(message) = storage.pop(&queue, &application).await {
+                        let id = message.id;
+                        let item = ConsumerItem::from(message);
+
+                        if let Err(err) = data_tx.send(item).await {
+                            if !storage.uncommit_inner(id, &queue, &application).await {
+                                error!(
+                                    "uncommit error id={}, queue={}, application={}, err={}",
+                                    id, &queue, &application, err
+                                );
+                            }
                         }
                     }
-
-                    attempt = 0;
-                } else {
-                    // 100, 300, 500, 700, 900
-
-                    if attempt < 30 {
-                        attempt += 1;
-                    }
-
-                    let sleep_time_ms = 100 * attempt;
-
-                    info!("waiting {} ms, consumer_id={}", sleep_time_ms, consumer.id);
-
-                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
         });
