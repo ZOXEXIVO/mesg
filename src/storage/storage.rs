@@ -46,7 +46,7 @@ impl Storage {
         return Ok(true);
 
         async fn push_internal(db: &Db, data: Bytes) {
-            let (identity_val, identity_vec) = get_identity(&db);
+            let (identity_val, identity_vec) = get_identity(db);
             let message = Message::new(identity_val, data);
 
             for tree in &db.tree_names() {
