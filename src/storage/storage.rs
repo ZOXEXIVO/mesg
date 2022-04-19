@@ -69,12 +69,12 @@ impl Storage {
             }
         }
 
-        fn get_identity(db: &Db) -> (u64, IVec) {
+        fn get_identity(db: &sled::Db) -> (u64, IVec) {
             const IDENTITY_KEY: &str = "identity";
 
             let mut current_value = 0;
 
-            let new_value = db
+            let identity_value = db
                 .fetch_and_update(IDENTITY_KEY, |old| {
                     let number = match old {
                         Some(bytes) => {
@@ -89,10 +89,15 @@ impl Storage {
 
                     Some(number.to_be_bytes().to_vec())
                 })
-                .unwrap()
                 .unwrap();
 
-            (current_value, new_value)
+            match identity_value {
+                Some(identity_val) => (current_value, identity_val),
+                None => (
+                    current_value,
+                    IVec::from(current_value.to_be_bytes().to_vec()),
+                ),
+            }
         }
     }
 
