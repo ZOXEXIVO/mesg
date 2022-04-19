@@ -5,7 +5,7 @@ use chashmap::CHashMap;
 use sled::{Db, IVec, Subscriber};
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 pub struct Storage {
     store: Arc<CHashMap<String, Db>>,
@@ -33,7 +33,7 @@ impl Storage {
     }
 
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
-        match self.store.get_mut(queue) {
+        match self.store.get(queue) {
             Some(db) => {
                 push_internal(&db, data).await;
             }
@@ -41,20 +41,16 @@ impl Storage {
                 let _ = self.write_mutex.lock().await;
 
                 if let Some(db) = self.store.get(queue) {
-                    println!("double check fallback = {}", queue);
-                    push_internal(&db, Bytes::clone(&data)).await;
+                    push_internal(&db, data).await;
                     return Ok(true);
                 }
-
-                println!("try push = {}", queue);
 
                 if let Ok(db) = sled::open(format!("{queue}.mesg")) {
                     push_internal(&db, data).await;
                     self.store.insert(String::from(queue), db);
-                    println!("try push = {}", queue);
-                    //panic!("Failed to open queue file={queue}.mesg"
-                } else {
-                    println!("ERROR push = {}", queue);
+                } else if let Some(db) = self.store.get(queue) {
+                    push_internal(&db, data).await;
+                    return Ok(true);
                 }
             }
         };
