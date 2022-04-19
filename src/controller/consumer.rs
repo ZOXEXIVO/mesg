@@ -35,7 +35,7 @@ impl Consumer {
             let mut subscriber: Option<Subscriber>;
 
             loop {
-                subscriber = storage.subscribe(&queue, &application);
+                subscriber = storage.subscribe(&queue, &application).await;
 
                 if subscriber.is_some() {
                     info!(

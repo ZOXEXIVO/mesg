@@ -5,19 +5,22 @@ use chashmap::CHashMap;
 use sled::{Db, IVec, Subscriber};
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::{Mutex, RwLock};
 
 pub struct Storage {
     store: Arc<CHashMap<String, Db>>,
+    write_mutex: Arc<Mutex<()>>,
 }
 
 impl Storage {
     pub fn new() -> Self {
         Storage {
             store: Arc::new(CHashMap::new()),
+            write_mutex: Arc::new(Mutex::new(())),
         }
     }
 
-    pub fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
+    pub async fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
         if let Some(db) = self.store.get_mut(queue) {
             let queue_names = NameUtils::application(application);
 
@@ -35,11 +38,24 @@ impl Storage {
                 push_internal(&db, data).await;
             }
             None => {
-                let db = sled::open(format!("{queue}.mesg")).unwrap();
+                let _ = self.write_mutex.lock().await;
 
-                push_internal(&db, data).await;
+                if let Some(db) = self.store.get(queue) {
+                    println!("double check fallback = {}", queue);
+                    push_internal(&db, Bytes::clone(&data)).await;
+                    return Ok(true);
+                }
 
-                self.store.insert(String::from(queue), db);
+                println!("try push = {}", queue);
+
+                if let Ok(db) = sled::open(format!("{queue}.mesg")) {
+                    push_internal(&db, data).await;
+                    self.store.insert(String::from(queue), db);
+                    println!("try push = {}", queue);
+                    //panic!("Failed to open queue file={queue}.mesg"
+                } else {
+                    println!("ERROR push = {}", queue);
+                }
             }
         };
 
@@ -162,6 +178,7 @@ impl Clone for Storage {
     fn clone(&self) -> Self {
         Storage {
             store: Arc::clone(&self.store),
+            write_mutex: Arc::clone(&self.write_mutex),
         }
     }
 }
