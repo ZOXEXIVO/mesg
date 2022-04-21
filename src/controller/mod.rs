@@ -1,7 +1,5 @@
-mod controller;
 pub mod consumer;
-mod coordinator;
+mod controller;
 
-pub use controller::*;
 pub use consumer::*;
-pub use coordinator::*;
+pub use controller::*;

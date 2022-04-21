@@ -1,6 +1,4 @@
-use crate::controller::{
-    Consumer, ConsumerCoordinator, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer,
-};
+use crate::controller::{Consumer, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer};
 use crate::storage::Storage;
 use bytes::Bytes;
 use log::info;
@@ -11,14 +9,14 @@ use tokio::sync::RwLock;
 
 pub struct MesgController {
     storage: Arc<Storage>,
-    consummers: ConsumerCollection,
+    consumers: ConsumerCollection,
 }
 
 impl MesgController {
     pub fn new(storage: Arc<Storage>) -> Self {
         MesgController {
             storage,
-            consummers: ConsumerCollection::new(),
+            consumers: ConsumerCollection::new(),
         }
     }
 
@@ -28,10 +26,6 @@ impl MesgController {
         application: &str,
         invisibility_timeout: u32,
     ) -> MesgConsumer {
-        self.storage
-            .create_application_queue(queue, application)
-            .await;
-
         info!(
             "consumer created for queue={}, application={}",
             queue, application
@@ -40,7 +34,7 @@ impl MesgController {
         let storage = Arc::clone(&self.storage);
 
         let consumer_handle = self
-            .consummers
+            .consumers
             .add_consumer(storage, queue, application, invisibility_timeout)
             .await;
 
@@ -51,7 +45,7 @@ impl MesgController {
         self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
     }
 
-    pub async fn commit(&self, id: i64, queue: &str, application: &str, success: bool) -> bool {
+    pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
         self.storage.commit(id, queue, application, success).await
     }
 }
@@ -71,8 +65,6 @@ impl ConsumerCollection {
             consumers: Arc::new(RwLock::new(Vec::new())),
             shutdown_tx,
         };
-
-        ConsumerCoordinator::start(Arc::clone(&consumers.consumers));
 
         // Run shutdown waiter
         ConsumersShutdownWaiter::wait(Arc::clone(&consumers.consumers), shutdown_rx);

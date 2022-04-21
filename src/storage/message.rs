@@ -2,9 +2,19 @@
 use std::cmp::Ordering;
 
 pub struct Message {
-    pub id: i64,
+    pub id: u64,
     pub data: Bytes,
     pub delivered: bool,
+}
+
+impl Message {
+    pub fn new(id: u64, data: Bytes) -> Self {
+        Message {
+            id,
+            data: Bytes::clone(&data),
+            delivered: false,
+        }
+    }
 }
 
 impl Ord for Message {
@@ -24,16 +34,6 @@ impl Eq for Message {}
 impl PartialOrd<Message> for Message {
     fn partial_cmp(&self, other: &Message) -> Option<Ordering> {
         self.id.partial_cmp(&other.id)
-    }
-}
-
-impl Message {
-    pub fn new(id: i64, data: Bytes) -> Self {
-        Message {
-            id,
-            data: Bytes::clone(&data),
-            delivered: false,
-        }
     }
 }
 

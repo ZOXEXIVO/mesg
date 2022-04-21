@@ -1,20 +1,20 @@
-mod transport;
-mod service;
 mod auxilary;
+mod service;
+mod transport;
 
 use tonic::transport::Server;
 
 use crate::cluster::cluster::Cluster;
 use log::info;
 
-use std::thread::JoinHandle;
-use tokio::runtime::Runtime;
+use crate::controller::MesgController;
 use crate::server::auxilary::AuxiliaryServer;
 use crate::server::service::MesgService;
 use crate::server::transport::grpc_impl::MesgGrpcImplService;
 use crate::server::transport::mesg_protocol_server::MesgProtocolServer;
 use crate::storage::Storage;
-use crate::controller::MesgController;
+use std::thread::JoinHandle;
+use tokio::runtime::Runtime;
 
 pub use crate::server::transport::grpc::PullResponse;
 use std::sync::Arc;
@@ -40,7 +40,10 @@ impl MesgServer {
         }
     }
 
-    pub async fn run(&mut self, options: MesgServerOptions) -> std::result::Result<(), std::io::Error> {
+    pub async fn run(
+        &mut self,
+        options: MesgServerOptions,
+    ) -> std::result::Result<(), std::io::Error> {
         let service_port = options.port;
 
         self.metrics_server_thread = Some(MesgServer::start_service_server(options.metric_port));
@@ -50,13 +53,13 @@ impl MesgServer {
         info!("listening: {0}", addr);
 
         self.storage = Some(Arc::new(Storage::new()));
-        
-        let cloned_storage = Arc::clone(&self.storage.as_ref().unwrap());
-        
+
+        let cloned_storage = Arc::clone(self.storage.as_ref().unwrap());
+
         let controller = MesgController::new(cloned_storage);
-        
+
         let service = MesgService::new(controller);
-        
+
         Server::builder()
             .add_service(MesgProtocolServer::new(MesgGrpcImplService::new(service)))
             .serve(addr)
@@ -68,7 +71,9 @@ impl MesgServer {
 
     fn start_service_server(port: u16) -> JoinHandle<()> {
         std::thread::spawn(move || {
-            Runtime::new().unwrap().block_on(AuxiliaryServer::start(port));
+            Runtime::new()
+                .unwrap()
+                .block_on(AuxiliaryServer::start(port));
         })
     }
 }
