@@ -15,8 +15,8 @@ impl AuxiliaryServer {
             Ok::<_, Infallible>(service_fn(handle_func))
         }));
 
-        info!("protofile: 0.0.0.0:{}/proto", port);
-        info!("metrics endpoint: 0.0.0.0:{}/metrics", port);
+        info!("protofile: http://0.0.0.0:{}/proto", port);
+        info!("metrics endpoint: http://0.0.0.0:{}/metrics", port);
 
         server.await.unwrap();
     }

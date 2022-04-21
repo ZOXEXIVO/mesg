@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Notify;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
 
@@ -27,9 +28,73 @@ impl Consumer {
     ) -> Self {
         let consumer = Consumer { id };
 
-        let storage = Arc::clone(&storage);
+        let consume_wakeup_task = Arc::new(Notify::new());
 
-        const SUBSCRIBTION_DELAY: u64 = 100_u64;
+        // start event watcher consumer
+        Consumer::start_queue_events_watcher(
+            consumer.id,
+            Arc::clone(&storage),
+            queue.clone(),
+            application.clone(),
+            data_tx.clone(),
+            consume_wakeup_task.clone(),
+        );
+
+        // start stale event watcher consumer
+        Consumer::start_stale_events_watcher(
+            consumer.id,
+            Arc::clone(&storage),
+            queue.clone(),
+            application.clone(),
+            data_tx.clone(),
+            consume_wakeup_task.clone(),
+        );
+
+        consumer
+    }
+
+    fn start_stale_events_watcher(
+        consumer_id: u32,
+        storage: Arc<Storage>,
+        queue: String,
+        application: String,
+        data_tx: Sender<ConsumerItem>,
+        notify: Arc<Notify>,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                let waiter = notify.notified();
+
+                if let Some(message) = storage.pop(&queue, &application).await {
+                    let id = message.id;
+                    let item = ConsumerItem::from(message);
+
+                    if let Err(err) = data_tx.send(item).await {
+                        if !storage.uncommit_inner(id, &queue, &application).await {
+                            error!(
+                                "uncommit error consumer_id={}, id={}, queue={}, application={}, err={}",
+                                consumer_id, id, &queue, &application, err
+                            );
+                        }
+                    }
+                } else {
+                    waiter.await;
+
+                    info!("consumer notified, consumer_id={}", consumer_id);
+                }
+            }
+        });
+    }
+
+    fn start_queue_events_watcher(
+        consumer_id: u32,
+        storage: Arc<Storage>,
+        queue: String,
+        application: String,
+        data_tx: Sender<ConsumerItem>,
+        notify: Arc<Notify>,
+    ) {
+        const SUBSCRIPTION_DELAY: u64 = 1000_u64;
 
         tokio::spawn(async move {
             let mut subscriber: Option<Subscriber>;
@@ -40,63 +105,49 @@ impl Consumer {
                 if subscriber.is_some() {
                     info!(
                         "subscribed to queue={}, application={}, consumer_id={}",
-                        &queue, &application, consumer.id
+                        &queue, &application, consumer_id
                     );
                     break;
                 }
 
-                tokio::time::sleep(Duration::from_millis(SUBSCRIBTION_DELAY)).await;
+                tokio::time::sleep(Duration::from_millis(SUBSCRIPTION_DELAY)).await;
 
                 info!(
                     "waiting for data subscriber {} ms, consumer_id={}",
-                    SUBSCRIBTION_DELAY, consumer.id
+                    SUBSCRIPTION_DELAY, consumer_id
                 );
             }
 
-            let mut data_subscribtion = subscriber.as_mut().unwrap();
+            let mut data_subscription = subscriber.as_mut().unwrap();
 
-            while let Some(event) = (&mut data_subscribtion).await {
+            while let Some(event) = (&mut data_subscription).await {
                 if let sled::Event::Insert { key: _, value: _ } = event {
-                    if let Some(message) = storage.pop(&queue, &application).await {
-                        let id = message.id;
-                        let item = ConsumerItem::from(message);
-
-                        if let Err(err) = data_tx.send(item).await {
-                            if !storage.uncommit_inner(id, &queue, &application).await {
-                                error!(
-                                    "uncommit error id={}, queue={}, application={}, err={}",
-                                    id, &queue, &application, err
-                                );
-                            }
-                        }
-                    }
+                    notify.notify_waiters();
                 }
             }
         });
-
-        consumer
     }
 }
 
 pub struct MesgConsumer {
     pub id: u32,
     pub queue: String,
-    pub reciever: Receiver<ConsumerItem>,
-    pub shudown_channel: UnboundedSender<u32>,
+    pub receiver: Receiver<ConsumerItem>,
+    pub shutdown_channel: UnboundedSender<u32>,
 }
 
 impl MesgConsumer {
     pub fn new(
         id: u32,
         queue: String,
-        reciever: Receiver<ConsumerItem>,
-        shudown_channel: UnboundedSender<u32>,
+        receiver: Receiver<ConsumerItem>,
+        shutdown_channel: UnboundedSender<u32>,
     ) -> Self {
         MesgConsumer {
             id,
             queue,
-            reciever,
-            shudown_channel,
+            receiver,
+            shutdown_channel,
         }
     }
 }
@@ -105,9 +156,9 @@ impl Future for MesgConsumer {
     type Output = ConsumerItem;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.reciever.poll_recv(cx) {
-            Poll::Ready(citem) => {
-                if let Some(item) = citem {
+        match self.receiver.poll_recv(cx) {
+            Poll::Ready(item) => {
+                if let Some(item) = item {
                     Poll::Ready(item)
                 } else {
                     Poll::Pending
@@ -153,7 +204,7 @@ impl Drop for MesgConsumer {
 
         info!("send shutdown message for consumer_id={}", self.id);
 
-        if let Err(err) = self.shudown_channel.send(self.id) {
+        if let Err(err) = self.shutdown_channel.send(self.id) {
             error!(
                 "error sending shutdown message to consumer_id={}, error={}",
                 self.id, err
