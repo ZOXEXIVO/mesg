@@ -67,6 +67,8 @@ impl Storage {
                     .insert(&identity_vec, message.clone().data.to_vec())
                     .unwrap();
             }
+
+            db.flush_async().await.unwrap();
         }
 
         fn get_identity(db: &sled::Db) -> (u64, IVec) {
@@ -116,6 +118,8 @@ impl Storage {
                     let val_bytes: Vec<u8> = v.to_vec();
 
                     let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
+
+                    db.flush_async().await.unwrap();
 
                     return Some(Message::new(id, Bytes::from(val_bytes)));
                 }

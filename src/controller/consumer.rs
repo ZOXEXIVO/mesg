@@ -11,10 +11,14 @@ use std::task::{Context, Poll};
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Notify;
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
 pub struct Consumer {
     pub id: u32,
+
+    queue_watcher_task: JoinHandle<()>,
+    stale_events_watcher_task: JoinHandle<()>,
 }
 
 impl Consumer {
@@ -26,29 +30,27 @@ impl Consumer {
         invisibility_timeout: u32,
         data_tx: Sender<ConsumerItem>,
     ) -> Self {
-        let consumer = Consumer { id };
-
         let consume_wakeup_task = Arc::new(Notify::new());
 
-        // start event watcher consumer
-        Consumer::start_queue_events_watcher(
-            consumer.id,
-            Arc::clone(&storage),
-            queue.clone(),
-            application.clone(),
-            data_tx.clone(),
-            consume_wakeup_task.clone(),
-        );
-
-        // start stale event watcher consumer
-        Consumer::start_stale_events_watcher(
-            consumer.id,
-            Arc::clone(&storage),
-            queue.clone(),
-            application.clone(),
-            data_tx.clone(),
-            consume_wakeup_task.clone(),
-        );
+        let consumer = Consumer {
+            id,
+            queue_watcher_task: Consumer::start_queue_events_watcher(
+                id,
+                Arc::clone(&storage),
+                queue.clone(),
+                application.clone(),
+                data_tx.clone(),
+                consume_wakeup_task.clone(),
+            ),
+            stale_events_watcher_task: Consumer::start_stale_events_watcher(
+                id,
+                Arc::clone(&storage),
+                queue.clone(),
+                application.clone(),
+                data_tx.clone(),
+                consume_wakeup_task.clone(),
+            ),
+        };
 
         consumer
     }
@@ -60,7 +62,7 @@ impl Consumer {
         application: String,
         data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
-    ) {
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 let waiter = notify.notified();
@@ -79,11 +81,9 @@ impl Consumer {
                     }
                 } else {
                     waiter.await;
-
-                    info!("consumer notified, consumer_id={}", consumer_id);
                 }
             }
-        });
+        })
     }
 
     fn start_queue_events_watcher(
@@ -93,7 +93,7 @@ impl Consumer {
         application: String,
         data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
-    ) {
+    ) -> JoinHandle<()> {
         const SUBSCRIPTION_DELAY: u64 = 1000_u64;
 
         tokio::spawn(async move {
@@ -122,10 +122,15 @@ impl Consumer {
 
             while let Some(event) = (&mut data_subscription).await {
                 if let sled::Event::Insert { key: _, value: _ } = event {
-                    notify.notify_waiters();
+                    notify.notify_one();
                 }
             }
-        });
+        })
+    }
+
+    pub async fn shutdown(&self) {
+        self.queue_watcher_task.abort();
+        self.stale_events_watcher_task.abort();
     }
 }
 
@@ -229,7 +234,10 @@ impl ConsumersShutdownWaiter {
                     .position(|c| c.id == consumer_id_to_remove)
                 {
                     Some(consumer_pos) => {
-                        consumers_guard.remove(consumer_pos);
+                        let consumer = consumers_guard.remove(consumer_pos);
+
+                        consumer.shutdown().await;
+
                         info!("consumer_id={} removed", consumer_id_to_remove)
                     }
                     None => {

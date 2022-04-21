@@ -1,6 +1,4 @@
-use crate::controller::{
-    Consumer, ConsumerCoordinator, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer,
-};
+use crate::controller::{Consumer, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer};
 use crate::storage::Storage;
 use bytes::Bytes;
 use log::info;
@@ -67,8 +65,6 @@ impl ConsumerCollection {
             consumers: Arc::new(RwLock::new(Vec::new())),
             shutdown_tx,
         };
-
-        ConsumerCoordinator::start(Arc::clone(&consumers.consumers));
 
         // Run shutdown waiter
         ConsumersShutdownWaiter::wait(Arc::clone(&consumers.consumers), shutdown_rx);
