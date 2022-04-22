@@ -7,6 +7,8 @@ RUN rustup component add rustfmt
 
 RUN cargo test
 
+RUN apt-get update && apt-get -y install cmake protobuf-compiler
+
 RUN cargo build --release
 
 FROM rust:1.59-slim
