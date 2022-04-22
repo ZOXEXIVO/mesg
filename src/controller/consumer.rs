@@ -2,6 +2,11 @@ use crate::controller::ConsumerHandle;
 use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
+use futures::{
+    future::FutureExt, // for `.fuse()`
+    pin_mut,
+    select,
+};
 use log::{error, info};
 use sled::Subscriber;
 use std::future::Future;
@@ -32,7 +37,7 @@ impl Consumer {
     ) -> Self {
         let consume_wakeup_task = Arc::new(Notify::new());
 
-        let consumer = Consumer {
+        Consumer {
             id,
             queue_watcher_task: Consumer::start_queue_events_watcher(
                 id,
@@ -44,14 +49,12 @@ impl Consumer {
             stale_events_watcher_task: Consumer::start_stale_events_watcher(
                 id,
                 Arc::clone(&storage),
-                queue.clone(),
-                application.clone(),
-                data_tx.clone(),
-                consume_wakeup_task.clone(),
+                queue,
+                application,
+                data_tx,
+                consume_wakeup_task,
             ),
-        };
-
-        consumer
+        }
     }
 
     fn start_stale_events_watcher(
@@ -64,7 +67,7 @@ impl Consumer {
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                let waiter = notify.notified();
+                let notified_task = notify.notified();
 
                 if let Some(message) = storage.pop(&queue, &application).await {
                     let id = message.id;
@@ -79,7 +82,16 @@ impl Consumer {
                         }
                     }
                 } else {
-                    waiter.await;
+                    info!("wait for notification, consumer_id={}", consumer_id);
+
+                    let mut notifier_task = Box::pin(notified_task.fuse());
+                    let mut timer_task =
+                        Box::pin(tokio::time::sleep(Duration::from_millis(1000)).fuse());
+
+                    select! {
+                        () = notifier_task => {},
+                        () = timer_task => {}
+                    };
                 }
             }
         })
@@ -109,11 +121,6 @@ impl Consumer {
                 }
 
                 tokio::time::sleep(Duration::from_millis(SUBSCRIPTION_DELAY)).await;
-
-                info!(
-                    "waiting for data subscriber {} ms, consumer_id={}",
-                    SUBSCRIPTION_DELAY, consumer_id
-                );
             }
 
             let mut data_subscription = subscriber.as_mut().unwrap();
