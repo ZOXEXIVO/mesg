@@ -39,7 +39,6 @@ impl Consumer {
                 Arc::clone(&storage),
                 queue.clone(),
                 application.clone(),
-                data_tx.clone(),
                 consume_wakeup_task.clone(),
             ),
             stale_events_watcher_task: Consumer::start_stale_events_watcher(
@@ -91,7 +90,6 @@ impl Consumer {
         storage: Arc<Storage>,
         queue: String,
         application: String,
-        data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
     ) -> JoinHandle<()> {
         const SUBSCRIPTION_DELAY: u64 = 1000_u64;
