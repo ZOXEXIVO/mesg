@@ -5,6 +5,8 @@ COPY ./ ./
 
 RUN rustup component add rustfmt
 
+RUN apt-get update && apt-get -y install cmake protobuf-compiler
+
 RUN cargo test
 
 RUN apt-get update && apt-get -y install cmake protobuf-compiler
