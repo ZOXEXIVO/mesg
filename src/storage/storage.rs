@@ -148,6 +148,8 @@ impl Storage {
 
                 if let Ok(removed) = uncommitted_tree.remove(id_vec) {
                     if removed.is_some() {
+                        db.flush_async().await.unwrap();
+                        
                         return true;
                     }
                 }
@@ -170,6 +172,8 @@ impl Storage {
 
                 if let Ok(Some(removed_message)) = uncommitted_tree.remove(id_vec.clone()) {
                     tree.insert(id_vec, removed_message).unwrap();
+                    
+                    db.flush_async().await.unwrap();
                 }
 
                 false

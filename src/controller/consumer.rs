@@ -66,6 +66,8 @@ impl Consumer {
         notify: Arc<Notify>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
+            let mut attempt: u16 = 0;
+
             loop {
                 let notified_task = notify.notified();
 
@@ -82,16 +84,22 @@ impl Consumer {
                         }
                     }
                 } else {
-                    info!("wait for notification, consumer_id={}", consumer_id);
+                    if attempt < 10 {
+                        attempt += 1;
+                    } else {
+                        attempt = 0;
 
-                    let mut notifier_task = Box::pin(notified_task.fuse());
-                    let mut timer_task =
-                        Box::pin(tokio::time::sleep(Duration::from_millis(1000)).fuse());
+                        info!(
+                            "consumer parked to queue={}, application={}, consumer_id={}",
+                            &queue, &application, consumer_id
+                        );
 
-                    select! {
-                        () = notifier_task => {},
-                        () = timer_task => {}
-                    };
+                        notified_task.await;
+                    }
+
+                    let sleep_time_ms = 100 * attempt;
+
+                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
         })
