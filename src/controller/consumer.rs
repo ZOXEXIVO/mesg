@@ -84,9 +84,7 @@ impl Consumer {
                         }
                     }
                 } else {
-                    if attempt < 10 {
-                        attempt += 1;
-                    } else {
+                    if attempt > 100  {
                         attempt = 0;
 
                         info!(
@@ -97,8 +95,11 @@ impl Consumer {
                         notified_task.await;
                     }
 
+                    if attempt < 30 {
+                        attempt += 1;
+                    }
+                    
                     let sleep_time_ms = 100 * attempt;
-
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
