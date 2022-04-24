@@ -95,12 +95,6 @@ impl Consumer {
                     }
 
                     let sleep_time_ms = 100 * attempt;
-
-                    info!(
-                        "consumer no data, sleep {}, consumer_id={}, queue={}, application={}, ",
-                        sleep_time_ms, consumer_id, &queue, &application
-                    );
-
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
