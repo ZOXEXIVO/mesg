@@ -778,6 +778,7 @@ dependencies = [
  "sled",
  "structopt",
  "thiserror",
+ "thread-id",
  "timer",
  "tokio",
  "toml",
@@ -1446,6 +1447,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "thread-id"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fdfe0627923f7411a43ec9ec9c39c3a9b4151be313e0922042581fb6c9b717f"
+dependencies = [
+ "libc",
+ "redox_syscall",
+ "winapi",
 ]
 
 [[package]]

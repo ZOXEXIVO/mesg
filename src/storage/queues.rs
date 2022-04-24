@@ -1,40 +1,50 @@
+use crate::storage::QueueNames;
+use chashmap::CHashMap;
+use log::info;
 use sled::{Db, Tree};
-use std::collections::HashMap;
-use tokio::sync::RwLock;
 
 pub struct QueueCollection {
-    trees: RwLock<HashMap<String, Tree>>,
+    queues: CHashMap<String, Tree>,
 }
 
 impl QueueCollection {
     pub fn new() -> Self {
         QueueCollection {
-            trees: RwLock::new(HashMap::new()),
+            queues: CHashMap::new(),
         }
     }
 
     pub fn tree_names(&self) -> Vec<String> {
-        let read_lock = self.trees.blocking_read();
-        read_lock.keys().map(|k| k.clone()).collect()
+        self.queues
+            .clone()
+            .into_iter()
+            .map(|(k, _)| k)
+            .filter(|q| !QueueNames::is_unacked(q))
+            .collect()
     }
 
-    pub fn execute_in_queue<F: Fn(&Tree) -> R, R>(&self, db: &Db, queue: &str, action: F) -> R {
-        let read_lock = self.trees.blocking_read();
+    pub fn execute<F: Fn(&Tree) -> R, R>(&self, db: &Db, queue: &str, action: F) -> R {
+        let mut insert_result = None;
+        let mut update_result = None;
 
-        if let Some(tree) = read_lock.get(queue) {
-            return action(tree);
-        } else {
-            drop(read_lock);
+        self.queues.upsert(
+            queue.to_owned(),
+            || {
+                let opened_tree = db.open_tree(queue).unwrap();
 
-            let mut write_lock = self.trees.blocking_write();
+                insert_result = Some(action(&opened_tree));
 
-            let tree = db.open_tree(queue).unwrap();
+                opened_tree
+            },
+            |tree| {
+                update_result = Some(action(tree));
+            },
+        );
 
-            let result = action(&tree);
-
-            write_lock.insert(String::from(queue), tree);
-
-            result
+        if let Some(..) = insert_result {
+            return insert_result.unwrap();
         }
+
+        update_result.unwrap()
     }
 }

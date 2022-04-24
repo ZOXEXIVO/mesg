@@ -95,6 +95,7 @@ impl Consumer {
                     }
 
                     let sleep_time_ms = 100 * attempt;
+
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }

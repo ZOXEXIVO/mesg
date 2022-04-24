@@ -6,6 +6,7 @@ use log::{error, info};
 use sled::{Db, IVec, Subscriber};
 use std::collections::HashMap;
 use std::sync::Arc;
+use structopt::clap::App;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
@@ -27,9 +28,9 @@ impl Storage {
             .execute_in_context(queue, move |db, queues| {
                 let queue_names = NameUtils::application(application);
 
-                return queues.execute_in_queue(db, queue_names.default(), |tree| {
-                    return Some(tree.watch_prefix(vec![]));
-                });
+                queues.execute(db, queue_names.default(), |tree| {
+                    Some(tree.watch_prefix(vec![]))
+                })
             })
             .await;
 
@@ -48,10 +49,26 @@ impl Storage {
                 let mut pushed = false;
 
                 for tree_name in queues.tree_names() {
-                    queues.execute_in_queue(db, &tree_name, |app_queue| {
+                    queues.execute(db, &tree_name, |app_queue| {
                         app_queue
                             .insert(&identity_vec, message.clone().data.to_vec())
                             .unwrap();
+                        //
+                        // db.flush();
+                        //
+                        // let available_items = app_queue
+                        //     .iter()
+                        //     .keys()
+                        //     .map(|k| {
+                        //         u64::from_be_bytes(k.unwrap().to_vec().try_into().unwrap())
+                        //             .to_string()
+                        //     })
+                        //     .fold(String::new(), |a, b| a + ", " + &b);
+                        //
+                        // info!(
+                        //     "message pushed, message_id={}, available_items={}",
+                        //     message.id, available_items
+                        // );
                     });
 
                     pushed = true;
@@ -72,9 +89,9 @@ impl Storage {
             .execute_in_context(queue, move |db, queues| {
                 let queue_names = NameUtils::application(application);
 
-                return queues.execute_in_queue(db, queue_names.default(), |original_queue| {
+                return queues.execute(db, queue_names.default(), |original_queue| {
                     if let Ok(Some((k, v))) = original_queue.pop_min() {
-                        queues.execute_in_queue(db, queue_names.unacked(), |unacked_queue| {
+                        queues.execute(db, queue_names.unacked(), |unacked_queue| {
                             unacked_queue.insert(k.clone(), v.clone()).unwrap();
                         });
 
@@ -109,7 +126,7 @@ impl Storage {
             .execute_in_context(queue, move |db, queues| {
                 let queue_names = NameUtils::application(application);
 
-                return queues.execute_in_queue(db, queue_names.unacked(), |unacked_queue| {
+                return queues.execute(db, queue_names.unacked(), |unacked_queue| {
                     let id_vec = IVec::from(id.to_be_bytes().to_vec());
 
                     if let Ok(removed) = unacked_queue.remove(id_vec) {
@@ -135,12 +152,15 @@ impl Storage {
             .execute_in_context(queue, move |db, queues| {
                 let queue_names = NameUtils::application(application);
 
-                return queues.execute_in_queue(db, queue_names.unacked(), |unacked_queue| {
+                return queues.execute(db, queue_names.unacked(), |unacked_queue| {
                     let id_vec = IVec::from(id.to_be_bytes().to_vec());
 
+                    //TODO REMOVE CLONE
                     if let Ok(Some(removed_message)) = unacked_queue.remove(id_vec.clone()) {
-                        queues.execute_in_queue(db, queue_names.default(), move |original_queue| {
-                            original_queue.insert(id_vec, removed_message).unwrap();
+                        queues.execute(db, queue_names.default(), move |original_queue| {
+                            original_queue
+                                .insert(id_vec.clone(), removed_message.clone())
+                                .unwrap();
                         });
 
                         info!(
@@ -175,15 +195,32 @@ impl Storage {
 
             let mut write_lock = self.store.write().await;
 
-            let db = sled::open(format!("{queue}.mesg")).unwrap();
+            if let Ok(db) = sled::open(format!("{queue}.mesg")) {
+                let trees = QueueCollection::new();
 
-            let trees = QueueCollection::new();
+                action(&db, &trees);
 
-            action(&db, &trees);
+                flush(&db).await;
 
-            flush(&db).await;
+                write_lock.insert(String::from(queue), (db, trees));
+            } else {
+                drop(write_lock);
 
-            write_lock.insert(String::from(queue), (db, trees));
+                let read_lock = self.store.read().await;
+
+                info!(
+                    "execute_in_context: another read_lock getted, queue={}",
+                    queue
+                );
+
+                if let Some((db, trees)) = read_lock.get(queue) {
+                    let result = action(db, trees);
+
+                    flush(db).await;
+
+                    return Ok(result);
+                }
+            }
         }
 
         return Err(format!("Cannot create queue={}", queue));
@@ -197,11 +234,11 @@ impl Storage {
 
     pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
         let result = self
-            .execute_in_context(queue, move |db, apps| {
+            .execute_in_context(queue, move |db, queues| {
                 let queue_names = NameUtils::application(application);
 
-                let _ = db.open_tree(queue_names.default()).unwrap();
-                let _ = db.open_tree(queue_names.unacked()).unwrap();
+                queues.execute(db, queue_names.default(), move |_| {});
+                queues.execute(db, queue_names.unacked(), move |_| {});
 
                 info!(
                     "application queue created, queue={}, appplication={}",
