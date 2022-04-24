@@ -1,30 +1,35 @@
-
 pub struct NameUtils;
 
-pub struct QueueNames<'q>{
-    application: &'q str,
-    inner: String
+pub struct QueueNames {
+    application_len: usize,
+    inner: String,
 }
 
-impl<'q> QueueNames<'q> {
-    pub fn new(application: &'q str) -> Self {
+const UNACKED_QUEUE_POSTFIX: &str = "_unacked";
+
+impl QueueNames {
+    pub fn new(application: &str) -> Self {
         QueueNames {
-            application,
-            inner: format!("{}_uncommited", application),
+            application_len: application.len(),
+            inner: format!("{}{}", application, UNACKED_QUEUE_POSTFIX),
         }
     }
-    
+
     pub fn default(&self) -> &str {
-        &self.inner[0..self.application.len()]
+        &self.inner[0..self.application_len]
     }
 
-    pub fn uncommited(&self) -> &str {
+    pub fn unacked(&self) -> &str {
         &self.inner[..]
+    }
+
+    pub fn is_unacked(queue_name: &str) -> bool {
+        queue_name.ends_with(UNACKED_QUEUE_POSTFIX)
     }
 }
 
 impl NameUtils {
-    pub fn application(application : &str) -> QueueNames {
+    pub fn application(application: &str) -> QueueNames {
         QueueNames::new(application)
     }
 }

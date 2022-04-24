@@ -2,11 +2,6 @@ use crate::controller::ConsumerHandle;
 use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
-use futures::{
-    future::FutureExt, // for `.fuse()`
-    pin_mut,
-    select,
-};
 use log::{error, info};
 use sled::Subscriber;
 use std::future::Future;
@@ -76,7 +71,7 @@ impl Consumer {
                     let item = ConsumerItem::from(message);
 
                     if let Err(err) = data_tx.send(item).await {
-                        if !storage.uncommit_inner(id, &queue, &application).await {
+                        if !storage.unack_inner(id, &queue, &application).await {
                             error!(
                                 "uncommit error consumer_id={}, id={}, queue={}, application={}, err={}",
                                 consumer_id, id, &queue, &application, err
@@ -84,7 +79,7 @@ impl Consumer {
                         }
                     }
                 } else {
-                    if attempt > 100  {
+                    if attempt > 100 {
                         attempt = 0;
 
                         info!(
@@ -98,8 +93,14 @@ impl Consumer {
                     if attempt < 30 {
                         attempt += 1;
                     }
-                    
+
                     let sleep_time_ms = 100 * attempt;
+
+                    info!(
+                        "consumer no data, sleep {}, consumer_id={}, queue={}, application={}, ",
+                        sleep_time_ms, consumer_id, &queue, &application
+                    );
+
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
@@ -151,6 +152,7 @@ impl Consumer {
 pub struct MesgConsumer {
     pub id: u32,
     pub queue: String,
+    pub application: String,
     pub receiver: Receiver<ConsumerItem>,
     pub shutdown_channel: UnboundedSender<u32>,
 }
@@ -159,12 +161,14 @@ impl MesgConsumer {
     pub fn new(
         id: u32,
         queue: String,
+        application: String,
         receiver: Receiver<ConsumerItem>,
         shutdown_channel: UnboundedSender<u32>,
     ) -> Self {
         MesgConsumer {
             id,
             queue,
+            application,
             receiver,
             shutdown_channel,
         }
@@ -190,7 +194,13 @@ impl Future for MesgConsumer {
 
 impl From<ConsumerHandle> for MesgConsumer {
     fn from(handle: ConsumerHandle) -> Self {
-        MesgConsumer::new(handle.id, handle.queue, handle.data_rx, handle.shutdown_tx)
+        MesgConsumer::new(
+            handle.id,
+            handle.queue,
+            handle.application,
+            handle.data_rx,
+            handle.shutdown_tx,
+        )
     }
 }
 
@@ -221,16 +231,19 @@ impl Drop for MesgConsumer {
     fn drop(&mut self) {
         StaticMetricsWriter::decr_consumers_count_metric(&self.queue);
 
-        info!("send shutdown message for consumer_id={}", self.id);
+        info!(
+            "send shutdown message for consumer_id={}, queue={}, application={}",
+            self.id, &self.queue, &self.application
+        );
 
         if let Err(err) = self.shutdown_channel.send(self.id) {
             error!(
-                "error sending shutdown message to consumer_id={}, error={}",
-                self.id, err
+                "error sending shutdown message to consumer_id={}, queue={}, error={}",
+                self.id, &self.queue, err
             );
         }
 
-        info!("consumer disconnected");
+        info!("consumer disconnected, consumer_id={}", self.id);
     }
 }
 

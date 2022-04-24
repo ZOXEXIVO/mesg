@@ -44,8 +44,8 @@ impl Mesg for MesgService {
             .await;
 
         info!(
-            "consumer connected: consumer_id: {}, queue: {}",
-            consumer.id, &request.queue
+            "consumer connected: consumer_id: {}, queue: {}, application={}",
+            consumer.id, &request.queue, &request.application
         );
 
         PullResponseModel { consumer }

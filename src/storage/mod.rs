@@ -1,3 +1,4 @@
+mod identity;
 mod message;
 mod storage;
 mod utils;
