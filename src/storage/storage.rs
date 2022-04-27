@@ -209,7 +209,7 @@ impl Storage {
                 db.open_tree(queue_names.unacked()).unwrap();
 
                 info!(
-                    "application queue created, queue={}, appplication={}",
+                    "application queue created, queue={}, application={}",
                     queue, application
                 );
 
