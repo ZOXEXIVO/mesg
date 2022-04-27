@@ -40,10 +40,7 @@ impl MesgServer {
         }
     }
 
-    pub async fn run(
-        &mut self,
-        options: MesgServerOptions,
-    ) -> std::result::Result<(), std::io::Error> {
+    pub async fn run(&mut self, options: MesgServerOptions) -> Result<(), std::io::Error> {
         let service_port = options.port;
 
         self.metrics_server_thread = Some(MesgServer::start_service_server(options.metric_port));

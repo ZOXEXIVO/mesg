@@ -18,31 +18,41 @@ pub struct StaticMetricsWriter;
 
 impl StaticMetricsWriter {
     pub fn inc_push_metric(queue: &str) {
-        if let Some(write_guard) = PUSH_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::Relaxed);
-        } else {
-            PUSH_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
-        }
+        PUSH_METRIC.upsert(
+            queue.into(),
+            || Arc::new(AtomicU64::new(1)),
+            |val| {
+                val.fetch_add(1, Ordering::Relaxed);
+            },
+        );
     }
     pub fn inc_consumers_count_metric(queue: &str) {
-        if let Some(write_guard) = CONSUMERS_COUNT_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::Relaxed);
-        } else {
-            CONSUMERS_COUNT_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
-        }
+        CONSUMERS_COUNT_METRIC.upsert(
+            queue.into(),
+            || Arc::new(AtomicU64::new(1)),
+            |val| {
+                val.fetch_add(1, Ordering::Relaxed);
+            },
+        );
     }
     pub fn decr_consumers_count_metric(queue: &str) {
-        if let Some(write_guard) = CONSUMERS_COUNT_METRIC.get_mut(queue) {
-            write_guard.fetch_sub(1, Ordering::Relaxed);
-        }
+        CONSUMERS_COUNT_METRIC.upsert(
+            queue.into(),
+            || Arc::new(AtomicU64::new(0)),
+            |val| {
+                val.fetch_sub(1, Ordering::Relaxed);
+            },
+        );
     }
 
     pub fn inc_commit_metric(queue: &str) {
-        if let Some(write_guard) = COMMIT_METRIC.get_mut(queue) {
-            write_guard.fetch_add(1, Ordering::Relaxed);
-        } else {
-            COMMIT_METRIC.insert(queue.into(), Arc::new(AtomicU64::new(1)));
-        }
+        COMMIT_METRIC.upsert(
+            queue.into(),
+            || Arc::new(AtomicU64::new(1)),
+            |val| {
+                val.fetch_add(1, Ordering::Relaxed);
+            },
+        );
     }
 
     pub fn write(result: &mut String) {
