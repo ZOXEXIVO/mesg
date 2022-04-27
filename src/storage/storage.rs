@@ -205,8 +205,8 @@ impl Storage {
             .execute_in_context(queue, move |db| {
                 let queue_names = NameUtils::application(application);
 
-                db.open_tree(queue_names.default());
-                db.open_tree(queue_names.unacked());
+                db.open_tree(queue_names.default()).unwrap();
+                db.open_tree(queue_names.unacked()).unwrap();
 
                 info!(
                     "application queue created, queue={}, appplication={}",
