@@ -31,10 +31,11 @@ impl Storage {
             })
             .await;
 
-        match result {
-            Ok(res) => Some(res),
-            Err(_) => None,
+        if let Ok(res) = result {
+            return Some(res);
         }
+
+        None
     }
 
     pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
@@ -89,10 +90,11 @@ impl Storage {
             })
             .await;
 
-        match result {
-            Ok(res) => res,
-            Err(_) => None,
+        if let Ok(res) = result {
+            return res;
         }
+
+        None
     }
 
     pub async fn ack(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
@@ -136,9 +138,7 @@ impl Storage {
                 if let Ok(Some(removed_message)) = unacked_queue.remove(id_vec.clone()) {
                     let original_queue = db.open_tree(queue_names.default()).unwrap();
 
-                    original_queue
-                        .insert(id_vec.clone(), removed_message.clone())
-                        .unwrap();
+                    original_queue.insert(id_vec, removed_message).unwrap();
 
                     return true;
                 }
@@ -157,7 +157,7 @@ impl Storage {
     ) -> Result<R, String> {
         let read_lock = self.store.read().await;
 
-        if let Some((db)) = read_lock.get(queue) {
+        if let Some(db) = read_lock.get(queue) {
             let result = action(db);
 
             flush(db).await;
@@ -181,7 +181,7 @@ impl Storage {
 
                 let read_lock = self.store.read().await;
 
-                if let Some((db)) = read_lock.get(queue) {
+                if let Some(db) = read_lock.get(queue) {
                     let result = action(db);
 
                     flush(db).await;
@@ -225,7 +225,7 @@ impl Storage {
             .into_iter()
             .filter(|n| n != b"__sled__default")
             .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|q| !QueueNames::is_unacked(&q))
+            .filter(|q| !QueueNames::is_unacked(q))
             .collect()
     }
 }
