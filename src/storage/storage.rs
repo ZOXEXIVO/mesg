@@ -82,8 +82,9 @@ impl Storage {
                     let val_bytes: Vec<u8> = v.to_vec();
 
                     let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
+                    let value = Bytes::from(val_bytes);
 
-                    return Some(Message::new(id, Bytes::from(val_bytes)));
+                    return Some(Message::new(id, value));
                 }
 
                 None

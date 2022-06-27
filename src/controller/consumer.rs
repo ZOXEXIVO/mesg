@@ -78,21 +78,17 @@ impl Consumer {
                             );
                         }
                     }
+                } else if attempt > 50 {
+                    attempt = 0;
+
+                    info!(
+                        "consumer parked to queue={}, application={}, consumer_id={}",
+                        &queue, &application, consumer_id
+                    );
+
+                    notified_task.await;
                 } else {
-                    if attempt > 100 {
-                        attempt = 0;
-
-                        info!(
-                            "consumer parked to queue={}, application={}, consumer_id={}",
-                            &queue, &application, consumer_id
-                        );
-
-                        notified_task.await;
-                    }
-
-                    if attempt < 30 {
-                        attempt += 1;
-                    }
+                    attempt += 1;
 
                     let sleep_time_ms = 100 * attempt;
 

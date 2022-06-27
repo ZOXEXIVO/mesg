@@ -23,16 +23,13 @@ impl Identity {
 
                 current_value = number;
 
-                Some(number.to_be_bytes().to_vec())
+                Some(IVec::from(&number.to_be_bytes()))
             })
             .unwrap();
 
         match identity_value {
             Some(identity_val) => (current_value, identity_val),
-            None => (
-                current_value,
-                IVec::from(current_value.to_be_bytes().to_vec()),
-            ),
+            None => (current_value, IVec::from(&current_value.to_be_bytes())),
         }
     }
 }
