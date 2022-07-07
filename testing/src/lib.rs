@@ -60,7 +60,7 @@ mod tests {
             .unwrap()
             .into_inner();
 
-        for _ in 0..10000 {
+        for _ in 0..100 {
             let push_response = client
                 .push(tonic::Request::new(PushRequest {
                     queue: String::clone(&queue),
@@ -73,7 +73,7 @@ mod tests {
             assert_eq!(true, push_response.success);
         }
 
-        for _ in 0..10000 {
+        for _ in 0..100 {
             if let Ok(stream_item) = pull_stream.message().await {
                 let item = stream_item.unwrap();
 

@@ -27,9 +27,10 @@ impl Identity {
             })
             .unwrap();
 
-        match identity_value {
-            Some(identity_val) => (current_value, identity_val),
-            None => (current_value, IVec::from(&current_value.to_be_bytes())),
+        if identity_value.is_none() {
+            return (current_value, IVec::from(&current_value.to_be_bytes()));
         }
+
+        (current_value, IVec::from(&current_value.to_be_bytes()))
     }
 }
