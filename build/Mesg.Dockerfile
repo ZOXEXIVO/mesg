@@ -1,4 +1,4 @@
-FROM rust:1.61 as build
+FROM rust:1.62 as build
 WORKDIR /src
 
 COPY ./ ./
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get -y install cmake protobuf-compiler
 
 RUN cargo build --release
 
-FROM rust:1.61-slim
+FROM rust:1.62-slim
 
 WORKDIR /app
 
