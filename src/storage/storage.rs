@@ -6,23 +6,38 @@ use log::{error, info};
 use sled::{Db, IVec, Subscriber};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
 
+struct StorageData {
+    map: HashMap<String, Db>,
+    consumer_idx: AtomicU64
+}
+
+impl StorageData {
+    pub fn new() -> Self {
+        StorageData {
+            map: HashMap::new(),
+            consumer_idx: AtomicU64::new(0)
+        }
+    }
+}
+
 pub struct Storage {
-    store: Arc<RwLock<HashMap<String, Db>>>,
+    store: Arc<RwLock<StorageData>>,
 }
 
 impl Storage {
     pub fn new() -> Self {
         Storage {
-            store: Arc::new(RwLock::new(HashMap::new())),
+            store: Arc::new(RwLock::new(StorageData::new()))
         }
     }
 
     pub async fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let queue_names = NameUtils::application(application);
 
                 db.open_tree(queue_names.default())
@@ -45,36 +60,77 @@ impl Storage {
         is_broadcast: bool,
     ) -> Result<bool, StorageError> {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let (identity_val, identity_vec) = Identity::get(db, queue);
                 let message = Message::new(identity_val, Bytes::clone(&data));
 
-                let mut pushed = false;
-
-                for queue_name in Self::queue_names(db) {
-                    let queue_names = NameUtils::application(&queue_name);
-
-                    db.open_tree(queue_names.default())
-                        .unwrap()
-                        .insert(&identity_vec, message.clone().data.to_vec())
-                        .unwrap();
-
-                    pushed = true;
+                match is_broadcast {
+                    true => broadcast_send(db, identity_vec, message),
+                    false => direct_send(db, identity_vec, message, consumer_idx),
                 }
-
-                pushed
             })
             .await;
 
-        match result {
+        return match result {
             Ok(res) => Ok(res),
             Err(msg) => Err(StorageError::Generic(msg)),
+        };
+
+        fn broadcast_send(db: &Db, identity_vec: IVec, message: Message) -> bool {
+            let mut pushed = false;
+
+            for queue_name in queue_names(db) {
+                let queue_names = NameUtils::application(&queue_name);
+
+                db.open_tree(queue_names.default())
+                    .unwrap()
+                    .insert(&identity_vec, Message::clone(&message).data.to_vec())
+                    .unwrap();
+
+                pushed = true;
+            }
+
+            pushed
+        }
+
+        fn direct_send(db: &Db, identity_vec: IVec, message: Message, consumer_idx: u64) -> bool {
+            let queues_name = random_queue_name(db, consumer_idx);
+            let queue_names = NameUtils::application(&queues_name);
+            
+            db.open_tree(queue_names.default())
+                .unwrap()
+                .insert(&identity_vec, Message::clone(&message).data.to_vec())
+                .unwrap();
+
+            true
+        }
+
+        fn queue_names(db: &Db) -> Vec<String> {
+            db.tree_names()
+                .into_iter()
+                .filter(|n| n != b"__sled__default")
+                .map(|q| String::from_utf8(q.to_vec()).unwrap())
+                .filter(|q| !QueueNames::is_unacked(q))
+                .collect()
+        }
+
+        fn random_queue_name(db: &Db, consumer_idx: u64) -> String {
+            let items = db
+                .tree_names()
+                .into_iter()
+                .filter(|n| n != b"__sled__default")
+                .map(|q| String::from_utf8(q.to_vec()).unwrap())
+                .filter(|q| !QueueNames::is_unacked(q))
+                .collect();
+            
+            // TODO
+            let idx = consumer_idx
         }
     }
 
     pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let queue_names = NameUtils::application(application);
 
                 let original_queue = db.open_tree(queue_names.default()).unwrap();
@@ -112,7 +168,7 @@ impl Storage {
 
     pub async fn ack_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let queue_names = NameUtils::application(application);
 
                 let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
@@ -134,7 +190,7 @@ impl Storage {
 
     pub async fn unack_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let queue_names = NameUtils::application(application);
 
                 let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
@@ -156,15 +212,15 @@ impl Storage {
         result.unwrap_or(false)
     }
 
-    async fn execute_in_context<F: Fn(&Db) -> R, R>(
+    async fn execute_in_context<F: Fn(&Db, u64) -> R, R>(
         &self,
         queue: &str,
         action: F,
     ) -> Result<R, String> {
         let read_lock = self.store.read().await;
 
-        if let Some(db) = read_lock.get(queue) {
-            let result = action(db);
+        if let Some(db) = read_lock.map.get(queue) {
+            let result = action(db, read_lock.consumer_idx.load(Ordering::SeqCst));
 
             flush(db).await;
 
@@ -175,11 +231,11 @@ impl Storage {
             let mut write_lock = self.store.write().await;
 
             if let Ok(db) = sled::open(format!("{queue}.mesg")) {
-                let result = action(&db);
+                let result = action(&db, write_lock.consumer_idx.load(Ordering::SeqCst));
 
                 flush(&db).await;
 
-                write_lock.insert(String::from(queue), db);
+                write_lock.map.insert(String::from(queue), db);
 
                 return Ok(result);
             } else {
@@ -187,8 +243,8 @@ impl Storage {
 
                 let read_lock = self.store.read().await;
 
-                if let Some(db) = read_lock.get(queue) {
-                    let result = action(db);
+                if let Some(db) = read_lock.map.get(queue) {
+                    let result = action(db, read_lock.consumer_idx.load(Ordering::SeqCst));
 
                     flush(db).await;
 
@@ -208,7 +264,7 @@ impl Storage {
 
     pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
         let result = self
-            .execute_in_context(queue, move |db| {
+            .execute_in_context(queue, move |db, consumer_idx| {
                 let queue_names = NameUtils::application(application);
 
                 db.open_tree(queue_names.default()).unwrap();
@@ -224,15 +280,6 @@ impl Storage {
             .await;
 
         result.unwrap_or(false)
-    }
-
-    fn queue_names(db: &Db) -> Vec<String> {
-        db.tree_names()
-            .into_iter()
-            .filter(|n| n != b"__sled__default")
-            .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|q| !QueueNames::is_unacked(q))
-            .collect()
     }
 }
 

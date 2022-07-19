@@ -27,6 +27,7 @@ mod tests {
             .push(tonic::Request::new(PushRequest {
                 queue: String::clone(&queue),
                 data: vec![1, 2, 3],
+                is_broadcast: false,
             }))
             .await
             .unwrap()
@@ -65,6 +66,7 @@ mod tests {
                 .push(tonic::Request::new(PushRequest {
                     queue: String::clone(&queue),
                     data: vec![3, 2, 1],
+                    is_broadcast: false,
                 }))
                 .await
                 .unwrap()
