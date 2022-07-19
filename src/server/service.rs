@@ -72,6 +72,7 @@ impl Mesg for MesgService {
 pub struct PushRequestModel {
     pub queue: String,
     pub data: Bytes,
+    pub is_broadcast: bool,
 }
 
 pub struct PushResponseModel {

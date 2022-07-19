@@ -42,8 +42,11 @@ impl MesgController {
         MesgConsumer::from(consumer_handle)
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> bool {
-        self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
+    pub async fn push(&self, queue: &str, data: Bytes, is_broadcast: bool) -> bool {
+        self.storage
+            .push(queue, Bytes::clone(&data), is_broadcast)
+            .await
+            .unwrap()
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {

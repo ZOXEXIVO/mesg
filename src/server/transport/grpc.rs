@@ -5,6 +5,8 @@ pub struct PushRequest {
     pub queue: ::prost::alloc::string::String,
     #[prost(bytes="vec", tag="2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bool, tag="3")]
+    pub is_broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {

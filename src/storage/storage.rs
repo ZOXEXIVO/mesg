@@ -38,7 +38,12 @@ impl Storage {
         None
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> Result<bool, StorageError> {
+    pub async fn push(
+        &self,
+        queue: &str,
+        data: Bytes,
+        is_broadcast: bool,
+    ) -> Result<bool, StorageError> {
         let result = self
             .execute_in_context(queue, move |db| {
                 let (identity_val, identity_vec) = Identity::get(db, queue);
