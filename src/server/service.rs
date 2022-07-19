@@ -27,7 +27,10 @@ impl Mesg for MesgService {
         StaticMetricsWriter::inc_push_metric(&request.queue);
 
         PushResponseModel {
-            success: self.controller.push(&request.queue, request.data).await,
+            success: self
+                .controller
+                .push(&request.queue, request.data, request.is_broadcast)
+                .await,
         }
     }
 
