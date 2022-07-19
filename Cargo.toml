@@ -28,6 +28,7 @@ structopt = "0.3.26"
 lazy_static = "1.4.0"
 sled = "0.34.7"
 thread-id = "4.0.0"
+rand = "0.8.5"
 
 [build-dependencies]
 tonic-build = "0.7.2"
