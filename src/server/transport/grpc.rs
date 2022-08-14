@@ -1,4 +1,4 @@
-/// Push
+///  Push
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushRequest {
     #[prost(string, tag="1")]
@@ -13,7 +13,7 @@ pub struct PushResponse {
     #[prost(bool, tag="1")]
     pub success: bool,
 }
-/// Pull
+///  Pull
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag="1")]
@@ -30,7 +30,7 @@ pub struct PullResponse {
     #[prost(bytes="vec", tag="2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
-// Commit 
+//  Commit 
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
@@ -77,8 +77,8 @@ pub mod mesg_protocol_server {
     #[derive(Debug)]
     pub struct MesgProtocolServer<T: MesgProtocol> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: MesgProtocol> MesgProtocolServer<T> {
@@ -101,6 +101,18 @@ pub mod mesg_protocol_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for MesgProtocolServer<T>
@@ -269,7 +281,7 @@ pub mod mesg_protocol_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: MesgProtocol> tonic::transport::NamedService for MesgProtocolServer<T> {
+    impl<T: MesgProtocol> tonic::server::NamedService for MesgProtocolServer<T> {
         const NAME: &'static str = "grpc.MesgProtocol";
     }
 }

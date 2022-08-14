@@ -2,8 +2,8 @@ use crate::storage::identity::Identity;
 use crate::storage::message::Message;
 use crate::storage::{NameUtils, QueueNames};
 use bytes::Bytes;
+use chrono::Utc;
 use log::{error, info};
-use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use sled::{Db, IVec, Subscriber};
 use std::collections::HashMap;
@@ -25,9 +25,9 @@ impl Storage {
     pub async fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
         let result = self
             .execute_in_context(queue, move |db| {
-                let queue_names = NameUtils::application(application);
+                let queue_names = NameUtils::from_application(application);
 
-                db.open_tree(queue_names.default())
+                db.open_tree(queue_names.ready())
                     .unwrap()
                     .watch_prefix(vec![])
             })
@@ -48,12 +48,21 @@ impl Storage {
     ) -> Result<bool, StorageError> {
         let result = self
             .execute_in_context(queue, move |db| {
-                let (identity_val, identity_vec) = Identity::get(db, queue);
-                let message = Message::new(identity_val, Bytes::clone(&data));
+                // generate message id
+                let (_, identity_vec) = Identity::get(db, queue);
 
+                let queue_names = NameUtils::from_application(queue);
+
+                // store data
+                db.open_tree(queue_names.data())
+                    .unwrap()
+                    .insert(&identity_vec, data.to_vec())
+                    .unwrap();
+
+                // store message ids
                 match is_broadcast {
-                    true => broadcast_send(db, identity_vec, message),
-                    false => direct_send(db, identity_vec, message),
+                    true => broadcast_send(db, identity_vec),
+                    false => direct_send(db, identity_vec),
                 }
             })
             .await;
@@ -63,15 +72,15 @@ impl Storage {
             Err(msg) => Err(StorageError::Generic(msg)),
         };
 
-        fn broadcast_send(db: &Db, identity_vec: IVec, message: Message) -> bool {
+        fn broadcast_send(db: &Db, identity_vec: IVec) -> bool {
             let mut pushed = false;
 
-            for queue_name in queue_names(db) {
-                let queue_names = NameUtils::application(&queue_name);
+            for queue_name in ready_queue_names(db) {
+                let queue_names = NameUtils::from_application(&queue_name);
 
-                db.open_tree(queue_names.default())
+                db.open_tree(queue_names.ready())
                     .unwrap()
-                    .insert(&identity_vec, Message::clone(&message).data.to_vec())
+                    .insert(&identity_vec, vec![])
                     .unwrap();
 
                 pushed = true;
@@ -80,24 +89,24 @@ impl Storage {
             pushed
         }
 
-        fn direct_send(db: &Db, identity_vec: IVec, message: Message) -> bool {
+        fn direct_send(db: &Db, identity_vec: IVec) -> bool {
             let queues_name = random_queue_name(db);
-            let queue_names = NameUtils::application(&queues_name);
+            let queue_names = NameUtils::from_application(&queues_name);
 
-            db.open_tree(queue_names.default())
+            db.open_tree(queue_names.ready())
                 .unwrap()
-                .insert(&identity_vec, Message::clone(&message).data.to_vec())
+                .insert(&identity_vec, vec![])
                 .unwrap();
 
             true
         }
 
-        fn queue_names(db: &Db) -> Vec<String> {
+        fn ready_queue_names(db: &Db) -> Vec<String> {
             db.tree_names()
                 .into_iter()
                 .filter(|n| n != b"__sled__default")
                 .map(|q| String::from_utf8(q.to_vec()).unwrap())
-                .filter(|q| !QueueNames::is_unacked(q))
+                .filter(|q| QueueNames::is_ready(q))
                 .collect()
         }
 
@@ -107,7 +116,7 @@ impl Storage {
                 .into_iter()
                 .filter(|n| n != b"__sled__default")
                 .map(|q| String::from_utf8(q.to_vec()).unwrap())
-                .filter(|q| !QueueNames::is_unacked(q))
+                .filter(|q| QueueNames::is_ready(q))
                 .collect();
 
             let mut rng = thread_rng();
@@ -118,19 +127,38 @@ impl Storage {
         }
     }
 
-    pub async fn pop(&self, queue: &str, application: &str) -> Option<Message> {
+    pub async fn pop(
+        &self,
+        queue: &str,
+        application: &str,
+        invisibility_timeout: u32,
+    ) -> Option<Message> {
         let result = self
             .execute_in_context(queue, move |db| {
-                let queue_names = NameUtils::application(application);
+                let queue_names = NameUtils::from_application(application);
 
-                let original_queue = db.open_tree(queue_names.default()).unwrap();
-                let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
+                let ready_queue = db.open_tree(queue_names.ready()).unwrap();
 
-                if let Ok(Some((k, v))) = original_queue.pop_min() {
-                    unacked_queue.insert(k.clone(), v.clone()).unwrap();
+                if let Ok(Some((k, _))) = ready_queue.pop_min() {
+                    // calculate item expire time
+                    let now_millis = Utc::now().timestamp_millis();
+                    let expire_time_millis = now_millis + invisibility_timeout as i64 * 1000;
+
+                    let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
+
+                    unacked_queue
+                        .insert(
+                            k.clone(),
+                            IVec::from(expire_time_millis.to_be_bytes().to_vec()),
+                        )
+                        .unwrap();
+
+                    let message_data = db.open_tree(queue_names.data()).unwrap();
 
                     let key_bytes: Vec<u8> = k.to_vec();
-                    let val_bytes: Vec<u8> = v.to_vec();
+
+                    let message_data = message_data.get(k).unwrap().unwrap();
+                    let val_bytes: Vec<u8> = message_data.to_vec();
 
                     let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
                     let value = Bytes::from(val_bytes);
@@ -149,24 +177,28 @@ impl Storage {
         None
     }
 
-    pub async fn ack(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
+    pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
         match success {
-            true => self.ack_inner(id, queue, application).await,
-            false => self.unack_inner(id, queue, application).await,
+            true => self.commit_inner(id, queue, application).await,
+            false => self.revert_inner(id, queue, application).await,
         }
     }
 
-    pub async fn ack_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+    pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let result = self
             .execute_in_context(queue, move |db| {
-                let queue_names = NameUtils::application(application);
+                let queue_names = NameUtils::from_application(application);
 
                 let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
 
                 let id_vec = IVec::from(id.to_be_bytes().to_vec());
 
-                if let Ok(removed) = unacked_queue.remove(id_vec) {
+                if let Ok(removed) = unacked_queue.remove(id_vec.clone()) {
                     if removed.is_some() {
+                        let data_queue = db.open_tree(queue_names.data()).unwrap();
+
+                        data_queue.remove(id_vec).unwrap();
+
                         return true;
                     }
                 }
@@ -178,19 +210,19 @@ impl Storage {
         result.unwrap_or(false)
     }
 
-    pub async fn unack_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+    pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let result = self
             .execute_in_context(queue, move |db| {
-                let queue_names = NameUtils::application(application);
+                let queue_names = NameUtils::from_application(application);
 
                 let unacked_queue = db.open_tree(queue_names.unacked()).unwrap();
 
                 let id_vec = IVec::from(id.to_be_bytes().to_vec());
 
                 if let Ok(Some(removed_message)) = unacked_queue.remove(id_vec.clone()) {
-                    let original_queue = db.open_tree(queue_names.default()).unwrap();
+                    let ready_queue = db.open_tree(queue_names.ready()).unwrap();
 
-                    original_queue.insert(id_vec, removed_message).unwrap();
+                    ready_queue.insert(id_vec, removed_message).unwrap();
 
                     return true;
                 }
@@ -200,6 +232,11 @@ impl Storage {
             .await;
 
         result.unwrap_or(false)
+    }
+
+    pub async fn try_revert(&self, queue: &str, application: &str) -> bool {
+        false
+        //self.execute_in_context(queue, move |db| db.transaction(|tx| tx.generate_id()))
     }
 
     async fn execute_in_context<F: Fn(&Db) -> R, R>(
@@ -212,6 +249,7 @@ impl Storage {
         if let Some(db) = read_lock.map.get(queue) {
             let result = action(db);
 
+            //TODO Debounce
             flush(db).await;
 
             return Ok(result);
@@ -223,6 +261,7 @@ impl Storage {
             if let Ok(db) = sled::open(format!("{queue}.mesg")) {
                 let result = action(&db);
 
+                //TODO Debounce
                 flush(&db).await;
 
                 write_lock.map.insert(String::from(queue), db);
@@ -236,6 +275,7 @@ impl Storage {
                 if let Some(db) = read_lock.map.get(queue) {
                     let result = action(db);
 
+                    //TODO Debounce
                     flush(db).await;
 
                     return Ok(result);
@@ -255,10 +295,10 @@ impl Storage {
     pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
         let result = self
             .execute_in_context(queue, move |db| {
-                let queue_names = NameUtils::application(application);
+                let queue_names = NameUtils::from_application(application);
 
-                db.open_tree(queue_names.default()).unwrap();
-                db.open_tree(queue_names.unacked()).unwrap();
+                db.open_tree(queue_names.data()).unwrap();
+                db.open_tree(queue_names.ready()).unwrap();
 
                 info!(
                     "application queue created, queue={}, application={}",

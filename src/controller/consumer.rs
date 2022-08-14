@@ -19,6 +19,9 @@ pub struct Consumer {
 
     queue_watcher_task: JoinHandle<()>,
     stale_events_watcher_task: JoinHandle<()>,
+    revert_restorer_task: JoinHandle<()>,
+
+    invisibility_timeout: u32,
 }
 
 impl Consumer {
@@ -44,11 +47,18 @@ impl Consumer {
             stale_events_watcher_task: Consumer::start_stale_events_watcher(
                 id,
                 Arc::clone(&storage),
-                queue,
-                application,
+                queue.clone(),
+                application.clone(),
                 data_tx,
                 consume_wakeup_task,
+                invisibility_timeout,
             ),
+            revert_restorer_task: Consumer::start_revert_restorer(
+                Arc::clone(&storage),
+                queue,
+                application,
+            ),
+            invisibility_timeout,
         }
     }
 
@@ -59,6 +69,7 @@ impl Consumer {
         application: String,
         data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
+        invisibility_timeout: u32,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut attempt: u16 = 0;
@@ -66,12 +77,15 @@ impl Consumer {
             loop {
                 let notified_task = notify.notified();
 
-                if let Some(message) = storage.pop(&queue, &application).await {
+                if let Some(message) = storage
+                    .pop(&queue, &application, invisibility_timeout)
+                    .await
+                {
                     let id = message.id;
                     let item = ConsumerItem::from(message);
 
                     if let Err(err) = data_tx.send(item).await {
-                        if !storage.unack_inner(id, &queue, &application).await {
+                        if !storage.revert_inner(id, &queue, &application).await {
                             error!(
                                 "uncommit error consumer_id={}, id={}, queue={}, application={}, err={}",
                                 consumer_id, id, &queue, &application, err
@@ -134,9 +148,34 @@ impl Consumer {
         })
     }
 
+    fn start_revert_restorer(
+        storage: Arc<Storage>,
+        queue: String,
+        application: String,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut attempt: u16 = 0;
+
+            loop {
+                if !storage.try_revert(&queue, &application).await {
+                    attempt += 1;
+
+                    if attempt > 50 {
+                        attempt = 0;
+                    }
+
+                    let sleep_time_ms = 100 * attempt;
+
+                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
+                }
+            }
+        })
+    }
+
     pub async fn shutdown(&self) {
         self.queue_watcher_task.abort();
         self.stale_events_watcher_task.abort();
+        self.revert_restorer_task.abort();
     }
 }
 
