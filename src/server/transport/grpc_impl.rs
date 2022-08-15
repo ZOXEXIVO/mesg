@@ -45,6 +45,7 @@ where
             .push(PushRequestModel {
                 queue: message.queue,
                 data: Bytes::copy_from_slice(&message.data),
+                is_broadcast: message.is_broadcast
             })
             .await;
 

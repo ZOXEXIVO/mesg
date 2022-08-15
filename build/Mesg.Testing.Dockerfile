@@ -1,4 +1,4 @@
-FROM rust:1.59
+FROM rust:1.63
 WORKDIR /testing
 
 COPY testing/ ./testing 
@@ -7,5 +7,7 @@ COPY src/server/transport/proto/mesg.proto ./src/server/transport/proto/mesg.pro
 WORKDIR testing
 
 RUN rustup component add rustfmt
+
+RUN apt-get update && apt-get -y install cmake protobuf-compiler
 
 RUN cargo test

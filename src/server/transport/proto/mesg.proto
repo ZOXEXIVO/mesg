@@ -12,6 +12,7 @@ service MesgProtocol {
 message PushRequest {
   string queue = 1;
   bytes data = 2;
+  bool is_broadcast = 3;
 }
 
 message PushResponse {

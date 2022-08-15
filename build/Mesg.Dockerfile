@@ -1,9 +1,11 @@
-FROM rust:1.59 as build
+FROM rust:1.63 as build
 WORKDIR /src
 
 COPY ./ ./
 
 RUN rustup component add rustfmt
+
+RUN apt-get update && apt-get -y install cmake protobuf-compiler
 
 RUN cargo test
 
@@ -11,7 +13,7 @@ RUN apt-get update && apt-get -y install cmake protobuf-compiler
 
 RUN cargo build --release
 
-FROM rust:1.59-slim
+FROM rust:1.63-slim
 
 WORKDIR /app
 

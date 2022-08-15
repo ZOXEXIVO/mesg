@@ -27,7 +27,10 @@ impl Mesg for MesgService {
         StaticMetricsWriter::inc_push_metric(&request.queue);
 
         PushResponseModel {
-            success: self.controller.push(&request.queue, request.data).await,
+            success: self
+                .controller
+                .push(&request.queue, request.data, request.is_broadcast)
+                .await,
         }
     }
 
@@ -44,8 +47,8 @@ impl Mesg for MesgService {
             .await;
 
         info!(
-            "consumer connected: consumer_id: {}, queue: {}",
-            consumer.id, &request.queue
+            "consumer connected: consumer_id: {}, queue: {}, application={}",
+            consumer.id, &request.queue, &request.application
         );
 
         PullResponseModel { consumer }
@@ -72,6 +75,7 @@ impl Mesg for MesgService {
 pub struct PushRequestModel {
     pub queue: String,
     pub data: Bytes,
+    pub is_broadcast: bool,
 }
 
 pub struct PushResponseModel {

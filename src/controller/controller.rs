@@ -26,23 +26,27 @@ impl MesgController {
         application: &str,
         invisibility_timeout: u32,
     ) -> MesgConsumer {
-        info!(
-            "consumer created for queue={}, application={}",
-            queue, application
-        );
-
         let storage = Arc::clone(&self.storage);
 
+        // add consumer
         let consumer_handle = self
             .consumers
             .add_consumer(storage, queue, application, invisibility_timeout)
             .await;
 
+        // create application queue
+        self.storage
+            .create_application_queue(queue, application)
+            .await;
+
         MesgConsumer::from(consumer_handle)
     }
 
-    pub async fn push(&self, queue: &str, data: Bytes) -> bool {
-        self.storage.push(queue, Bytes::clone(&data)).await.unwrap()
+    pub async fn push(&self, queue: &str, data: Bytes, is_broadcast: bool) -> bool {
+        self.storage
+            .push(queue, Bytes::clone(&data), is_broadcast)
+            .await
+            .unwrap()
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
@@ -96,9 +100,15 @@ impl ConsumerCollection {
 
         consumers.push(consumer);
 
+        info!(
+            "consumer created, consumer_id={}, queue={}, application={}",
+            consumer_id, queue, application
+        );
+
         ConsumerHandle {
             id: consumer_id,
             queue: queue.into(),
+            application: String::from(application),
             data_rx: consumer_data_rx,
             shutdown_tx: self.shutdown_tx.clone(),
         }
@@ -112,6 +122,7 @@ impl ConsumerCollection {
 pub struct ConsumerHandle {
     pub id: u32,
     pub queue: String,
+    pub application: String,
     pub data_rx: Receiver<ConsumerItem>,
     pub shutdown_tx: UnboundedSender<u32>,
 }

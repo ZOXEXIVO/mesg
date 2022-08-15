@@ -19,6 +19,9 @@ pub struct Consumer {
 
     queue_watcher_task: JoinHandle<()>,
     stale_events_watcher_task: JoinHandle<()>,
+    revert_restorer_task: JoinHandle<()>,
+
+    invisibility_timeout: u32,
 }
 
 impl Consumer {
@@ -32,7 +35,7 @@ impl Consumer {
     ) -> Self {
         let consume_wakeup_task = Arc::new(Notify::new());
 
-        let consumer = Consumer {
+        Consumer {
             id,
             queue_watcher_task: Consumer::start_queue_events_watcher(
                 id,
@@ -46,12 +49,17 @@ impl Consumer {
                 Arc::clone(&storage),
                 queue.clone(),
                 application.clone(),
-                data_tx.clone(),
-                consume_wakeup_task.clone(),
+                data_tx,
+                consume_wakeup_task,
+                invisibility_timeout,
             ),
-        };
-
-        consumer
+            revert_restorer_task: Consumer::start_revert_restorer(
+                Arc::clone(&storage),
+                queue,
+                application,
+            ),
+            invisibility_timeout,
+        }
     }
 
     fn start_stale_events_watcher(
@@ -61,25 +69,44 @@ impl Consumer {
         application: String,
         data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
+        invisibility_timeout: u32,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            loop {
-                let waiter = notify.notified();
+            let mut attempt: u16 = 0;
 
-                if let Some(message) = storage.pop(&queue, &application).await {
+            loop {
+                let notified_task = notify.notified();
+
+                if let Some(message) = storage
+                    .pop(&queue, &application, invisibility_timeout)
+                    .await
+                {
                     let id = message.id;
                     let item = ConsumerItem::from(message);
 
                     if let Err(err) = data_tx.send(item).await {
-                        if !storage.uncommit_inner(id, &queue, &application).await {
+                        if !storage.revert_inner(id, &queue, &application).await {
                             error!(
                                 "uncommit error consumer_id={}, id={}, queue={}, application={}, err={}",
                                 consumer_id, id, &queue, &application, err
                             );
                         }
                     }
+                } else if attempt > 50 {
+                    attempt = 0;
+
+                    info!(
+                        "consumer parked to queue={}, application={}, consumer_id={}",
+                        &queue, &application, consumer_id
+                    );
+
+                    notified_task.await;
                 } else {
-                    waiter.await;
+                    attempt += 1;
+
+                    let sleep_time_ms = 100 * attempt;
+
+                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
         })
@@ -109,11 +136,6 @@ impl Consumer {
                 }
 
                 tokio::time::sleep(Duration::from_millis(SUBSCRIPTION_DELAY)).await;
-
-                info!(
-                    "waiting for data subscriber {} ms, consumer_id={}",
-                    SUBSCRIPTION_DELAY, consumer_id
-                );
             }
 
             let mut data_subscription = subscriber.as_mut().unwrap();
@@ -126,15 +148,41 @@ impl Consumer {
         })
     }
 
+    fn start_revert_restorer(
+        storage: Arc<Storage>,
+        queue: String,
+        application: String,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut attempt: u16 = 0;
+
+            loop {
+                if !storage.try_revert(&queue, &application).await {
+                    attempt += 1;
+
+                    if attempt > 50 {
+                        attempt = 0;
+                    }
+
+                    let sleep_time_ms = 100 * attempt;
+
+                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
+                }
+            }
+        })
+    }
+
     pub async fn shutdown(&self) {
         self.queue_watcher_task.abort();
         self.stale_events_watcher_task.abort();
+        self.revert_restorer_task.abort();
     }
 }
 
 pub struct MesgConsumer {
     pub id: u32,
     pub queue: String,
+    pub application: String,
     pub receiver: Receiver<ConsumerItem>,
     pub shutdown_channel: UnboundedSender<u32>,
 }
@@ -143,12 +191,14 @@ impl MesgConsumer {
     pub fn new(
         id: u32,
         queue: String,
+        application: String,
         receiver: Receiver<ConsumerItem>,
         shutdown_channel: UnboundedSender<u32>,
     ) -> Self {
         MesgConsumer {
             id,
             queue,
+            application,
             receiver,
             shutdown_channel,
         }
@@ -174,7 +224,13 @@ impl Future for MesgConsumer {
 
 impl From<ConsumerHandle> for MesgConsumer {
     fn from(handle: ConsumerHandle) -> Self {
-        MesgConsumer::new(handle.id, handle.queue, handle.data_rx, handle.shutdown_tx)
+        MesgConsumer::new(
+            handle.id,
+            handle.queue,
+            handle.application,
+            handle.data_rx,
+            handle.shutdown_tx,
+        )
     }
 }
 
@@ -205,16 +261,19 @@ impl Drop for MesgConsumer {
     fn drop(&mut self) {
         StaticMetricsWriter::decr_consumers_count_metric(&self.queue);
 
-        info!("send shutdown message for consumer_id={}", self.id);
+        info!(
+            "send shutdown message for consumer_id={}, queue={}, application={}",
+            self.id, &self.queue, &self.application
+        );
 
         if let Err(err) = self.shutdown_channel.send(self.id) {
             error!(
-                "error sending shutdown message to consumer_id={}, error={}",
-                self.id, err
+                "error sending shutdown message to consumer_id={}, queue={}, error={}",
+                self.id, &self.queue, err
             );
         }
 
-        info!("consumer disconnected");
+        info!("consumer disconnected, consumer_id={}", self.id);
     }
 }
 
