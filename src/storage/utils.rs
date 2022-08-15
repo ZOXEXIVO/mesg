@@ -33,4 +33,8 @@ impl NameUtils {
     pub fn from_application(application: &str) -> QueueNames {
         QueueNames::new(application)
     }
+
+    pub fn from_queue(queue: &str) -> QueueNames {
+        QueueNames::new(queue)
+    }
 }
