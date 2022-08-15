@@ -1,4 +1,4 @@
-///  Push
+/// Push
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushRequest {
     #[prost(string, tag="1")]
@@ -13,7 +13,7 @@ pub struct PushResponse {
     #[prost(bool, tag="1")]
     pub success: bool,
 }
-///  Pull
+/// Pull
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag="1")]
@@ -30,7 +30,7 @@ pub struct PullResponse {
     #[prost(bytes="vec", tag="2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
-//  Commit 
+// Commit 
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {

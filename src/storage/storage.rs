@@ -3,7 +3,7 @@ use crate::storage::message::Message;
 use crate::storage::{NameUtils, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
-use log::{error, info, debug};
+use log::{debug, error, info};
 use rand::{thread_rng, Rng};
 use sled::{Db, IVec, Subscriber};
 use std::collections::HashMap;
@@ -52,15 +52,13 @@ impl Storage {
                 let (identity_val, identity_vec) = Identity::get(db, queue);
 
                 let queue_names = NameUtils::from_application(queue);
-                                
+
                 // store data
                 db.open_tree(queue_names.data())
                     .unwrap()
                     .insert(&identity_vec, data.to_vec())
                     .unwrap();
 
-                info!("try put {} into {}", identity_val, queue_names.data());
-                
                 // store message ids
                 match is_broadcast {
                     true => broadcast_send(db, identity_vec),
@@ -94,8 +92,6 @@ impl Storage {
         fn direct_send(db: &Db, identity_vec: IVec) -> bool {
             let queues_name = random_queue_name(db);
 
-            info!("put it in {}", queues_name);
-            
             db.open_tree(queues_name)
                 .unwrap()
                 .insert(&identity_vec, vec![])
@@ -156,7 +152,7 @@ impl Storage {
                         )
                         .unwrap();
 
-                    let message_data = db.open_tree(NameUtils::from_queue(queue)).unwrap();
+                    let message_data = db.open_tree(NameUtils::from_queue(queue).data()).unwrap();
 
                     let key_bytes: Vec<u8> = k.to_vec();
 
