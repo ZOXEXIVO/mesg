@@ -4,7 +4,7 @@ pub struct QueueNames<'a> {
 }
 
 const READY_QUEUE_POSTFIX: &str = "ready";
-const UNACKED_QUEUE_POSTFIX: &str = "unacked";
+const UNACK_QUEUE_POSTFIX: &str = "unack";
 
 impl<'a> QueueNames<'a> {
     pub const fn from(queue: &'a str, application: &'a str) -> Self {
@@ -16,11 +16,17 @@ impl<'a> QueueNames<'a> {
     }
 
     pub fn ready(&self) -> String {
-        format!("{}_{}", self.queue, READY_QUEUE_POSTFIX)
+        format!(
+            "{}_{}_{}",
+            self.queue, self.application, READY_QUEUE_POSTFIX
+        )
     }
 
-    pub fn unacked(&self) -> String {
-        format!("{}_{}", self.queue, UNACKED_QUEUE_POSTFIX)
+    pub fn unack(&self) -> String {
+        format!(
+            "{}_{}_{}",
+            self.queue, self.application, UNACK_QUEUE_POSTFIX
+        )
     }
 
     pub fn is_ready(queue_name: &str) -> bool {
