@@ -50,7 +50,7 @@ impl MesgController {
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
-        self.storage.commit(id, queue, application, success).await
+        self.storage.ack(id, queue, application, success).await
     }
 }
 
