@@ -1,35 +1,35 @@
-pub struct NameUtils;
-
-pub struct QueueNames {
-    application_len: usize,
-    inner: String,
+pub struct QueueNames<'a> {
+    queue: &'a str,
+    application: &'a str,
 }
 
-const UNACKED_QUEUE_POSTFIX: &str = "_unacked";
+const READY_QUEUE_POSTFIX: &str = "ready";
+const UNACK_QUEUE_POSTFIX: &str = "unack";
 
-impl QueueNames {
-    pub fn new(application: &str) -> Self {
-        QueueNames {
-            application_len: application.len(),
-            inner: format!("{}{}", application, UNACKED_QUEUE_POSTFIX),
-        }
+impl<'a> QueueNames<'a> {
+    pub const fn from(queue: &'a str, application: &'a str) -> Self {
+        QueueNames { queue, application }
     }
 
-    pub fn default(&self) -> &str {
-        &self.inner[0..self.application_len]
+    pub fn data(&self) -> &str {
+        self.queue
     }
 
-    pub fn unacked(&self) -> &str {
-        &self.inner[..]
+    pub fn ready(&self) -> String {
+        format!(
+            "{}_{}_{}",
+            self.queue, self.application, READY_QUEUE_POSTFIX
+        )
     }
 
-    pub fn is_unacked(queue_name: &str) -> bool {
-        queue_name.ends_with(UNACKED_QUEUE_POSTFIX)
+    pub fn unack(&self) -> String {
+        format!(
+            "{}_{}_{}",
+            self.queue, self.application, UNACK_QUEUE_POSTFIX
+        )
     }
-}
 
-impl NameUtils {
-    pub fn application(application: &str) -> QueueNames {
-        QueueNames::new(application)
+    pub fn is_ready(queue_name: &str) -> bool {
+        queue_name.ends_with(READY_QUEUE_POSTFIX)
     }
 }
