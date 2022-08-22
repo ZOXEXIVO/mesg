@@ -1,8 +1,9 @@
-﻿use crate::storage::Storage;
+﻿use crate::storage::{QueueNames, Storage};
 use log::info;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
+use structopt::clap::App;
 use tokio::sync::RwLock;
 
 pub struct ExpiredMessageRestorerJob {
@@ -25,40 +26,33 @@ impl ExpiredMessageRestorerJob {
 
         tokio::spawn(async move {
             loop {
-                let current_queues = storage.get_unack_queues().await;
+                let unack_queues = storage.get_unack_queues().await;
 
-                let mut queues_to_add = Vec::new();
+                let mut new_queues_to_watch = Vec::with_capacity(unack_queues.len());
 
                 {
                     let watched_queue_read_guard = watched_queues.read().await;
 
-                    for (current_queue, current_application) in current_queues {
-                        let full_queue_name = format!("{}{}", current_queue, current_application);
-
-                        if !watched_queue_read_guard.contains(&full_queue_name) {
-                            queues_to_add.push((
-                                full_queue_name.to_owned(),
-                                (current_queue, current_application),
-                            ));
+                    for unack_queue in unack_queues {
+                        if !watched_queue_read_guard.contains(&unack_queue) {
+                            new_queues_to_watch.push(unack_queue);
                         }
                     }
                 }
 
-                if !queues_to_add.is_empty() {
+                if !new_queues_to_watch.is_empty() {
                     let mut watched_queue_write_guard = watched_queues.write().await;
 
-                    for (full_queue_path, (queue, application)) in queues_to_add {
-                        info!(
-                            "add new queue to watch, queue={}, application={}",
-                            queue, application
-                        );
+                    for unack_queue in new_queues_to_watch {
+                        watched_queue_write_guard.insert(unack_queue.clone());
 
-                        watched_queue_write_guard.insert(full_queue_path);
+                        let (queue_name, application_name) =
+                            QueueNames::parse_queue_application(&unack_queue);
 
                         Self::start_message_restorer_for_queue(
                             Arc::clone(&storage),
-                            queue.clone(),
-                            application.clone(),
+                            queue_name.to_owned(),
+                            application_name.to_owned(),
                         );
                     }
                 }
@@ -71,6 +65,8 @@ impl ExpiredMessageRestorerJob {
     fn start_message_restorer_for_queue(storage: Arc<Storage>, queue: String, application: String) {
         tokio::spawn(async move {
             let mut attempt: u16 = 0;
+
+            println!("### START: {} {}", queue, application);
 
             loop {
                 if !storage.try_restore(&queue, &application).await {

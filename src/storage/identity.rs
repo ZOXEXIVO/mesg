@@ -1,12 +1,11 @@
-﻿use sled::IVec;
+﻿use crate::storage::QueueNames;
+use sled::IVec;
 
 pub struct Identity;
 
-const IDENTITY_KEY: &str = "identity";
-
 impl Identity {
     pub fn get(db: &sled::Db, queue: &str) -> (u64, IVec) {
-        let identity_key = format!("{IDENTITY_KEY}_{queue}");
+        let identity_key = QueueNames::identity(queue);
 
         let mut current_value = 0;
 

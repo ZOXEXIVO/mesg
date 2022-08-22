@@ -16,12 +16,12 @@ pub struct Storage {
 impl Storage {
     pub fn new() -> Self {
         Storage {
-            store: Arc::new(sled::open(format!("data.mesg")).unwrap()),
+            store: Arc::new(sled::open("data.mesg").unwrap()),
         }
     }
 
     pub async fn subscribe(&self, queue: &str, application: &str) -> Subscriber {
-        let queues = QueueNames::from_application(application);
+        let queues = QueueNames::new(queue, application);
 
         info!("subscribed to queue={}", queues.ready());
 
@@ -54,11 +54,6 @@ impl Storage {
             let mut pushed = false;
 
             for queue in ready_queue_names(&self.store) {
-                info!(
-                    "broadcast store message, id={}, queue={}",
-                    identity_val, queue
-                );
-
                 self.store
                     .open_tree(queue)
                     .unwrap()
@@ -71,8 +66,6 @@ impl Storage {
             return Ok(pushed);
         } else {
             let queue = random_queue_name(&self.store);
-
-            info!("direct store message, id={}, queue={}", identity_val, queue);
 
             self.store
                 .open_tree(queue)
@@ -113,11 +106,9 @@ impl Storage {
         application: &str,
         invisibility_timeout: u32,
     ) -> Option<Message> {
-        let queue_names = QueueNames::from_application(application);
+        let queue_names = QueueNames::new(queue, application);
 
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-
-        info!("pop, queue_names.ready()={}", queue_names.ready());
 
         if let Ok(Some((k, _))) = ready_queue.pop_min() {
             // calculate item expire time
@@ -126,7 +117,7 @@ impl Storage {
 
             let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
-            // store {expire_time, message_id} to unack queue
+            // store { expire_time, message_id } to unack queue
             unack_queue
                 .insert(
                     IVec::from(expire_time_millis.to_be_bytes().to_vec()),
@@ -159,7 +150,7 @@ impl Storage {
     }
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::from_application(application);
+        let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
@@ -187,7 +178,7 @@ impl Storage {
     }
 
     pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::from_application(application);
+        let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
@@ -217,11 +208,9 @@ impl Storage {
     }
 
     pub async fn try_restore(&self, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::from_application(application);
+        let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-        info!("try_restore, queue_names.unack()={}", queue_names.unack());
 
         if let Ok(Some((k, v))) = unack_queue.pop_min() {
             let now_millis = Utc::now().timestamp_millis();
@@ -248,15 +237,8 @@ impl Storage {
                     );
 
                     let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-                    info!("try_restore, queue_names.ready()={}", queue_names.ready());
 
                     ready_queue.insert(v, removed_message).unwrap();
-
-                    info!(
-                        "restore: message id inserted, id={}, queue={}",
-                        message_id,
-                        queue_names.ready()
-                    );
                 }
 
                 return true;
@@ -269,26 +251,25 @@ impl Storage {
         false
     }
 
-    pub async fn get_unack_queues(&self) -> Vec<(String, String)> {
+    pub async fn get_unack_queues(&self) -> Vec<String> {
         self.store
             .tree_names()
             .into_iter()
             .filter(|n| n != b"__sled__default")
             .map(|q| String::from_utf8(q.to_vec()).unwrap())
             .filter(|q| QueueNames::is_unack(q))
-            .map(|q| (QueueNames::get_unack_queue_name(&q).to_owned(), q))
             .collect()
     }
 
     pub async fn create_application_queue(&self, queue: &str, application: &str) {
-        let queue_names = QueueNames::from_application(application);
+        let queue_names = QueueNames::new(queue, application);
 
         self.store.open_tree(queue_names.data()).unwrap();
         self.store.open_tree(queue_names.unack()).unwrap();
         self.store.open_tree(queue_names.ready()).unwrap();
 
         info!(
-            "application queue created, queue={}, unack={}, ready={}, application={}",
+            "application queue created, data={}, unack={}, ready={}, application={}",
             queue_names.data(),
             queue_names.unack(),
             queue_names.ready(),
