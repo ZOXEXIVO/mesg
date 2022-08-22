@@ -1,3 +1,4 @@
+use crate::controller::jobs::BackgroundJobs;
 use crate::controller::{Consumer, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer};
 use crate::storage::Storage;
 use bytes::Bytes;
@@ -10,14 +11,20 @@ use tokio::sync::RwLock;
 pub struct MesgController {
     storage: Arc<Storage>,
     consumers: ConsumerCollection,
+    background_jobs: BackgroundJobs,
 }
 
 impl MesgController {
     pub fn new(storage: Arc<Storage>) -> Self {
         MesgController {
-            storage,
+            storage: Arc::clone(&storage),
             consumers: ConsumerCollection::new(),
+            background_jobs: BackgroundJobs::new(Arc::clone(&storage)),
         }
+    }
+
+    pub fn start_jobs(&self) {
+        self.background_jobs.start();
     }
 
     pub async fn create_consumer(

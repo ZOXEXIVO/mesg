@@ -55,6 +55,8 @@ impl MesgServer {
 
         let controller = MesgController::new(cloned_storage);
 
+        controller.start_jobs();
+
         let service = MesgService::new(controller);
 
         Server::builder()
