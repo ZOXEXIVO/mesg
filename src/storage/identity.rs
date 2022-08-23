@@ -4,7 +4,7 @@ use sled::IVec;
 pub struct Identity;
 
 impl Identity {
-    pub fn get(db: &sled::Db, queue: &str) -> (u64, IVec) {
+    pub async fn generate(db: &sled::Db, queue: &str) -> (u64, IVec) {
         let identity_key = QueueNames::identity(queue);
 
         let mut current_value = 0;
@@ -25,6 +25,8 @@ impl Identity {
                 Some(IVec::from(&number.to_be_bytes()))
             })
             .unwrap();
+
+        db.flush_async().await.unwrap();
 
         if identity_value.is_none() {
             return (current_value, IVec::from(&current_value.to_be_bytes()));

@@ -38,7 +38,7 @@ impl Storage {
         is_broadcast: bool,
     ) -> Result<bool, StorageError> {
         // generate message id
-        let (identity_val, identity_vec) = Identity::get(&self.store, queue);
+        let (identity_val, identity_vec) = Identity::generate(&self.store, queue).await;
 
         // store data
         self.store
