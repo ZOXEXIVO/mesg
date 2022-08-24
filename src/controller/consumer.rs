@@ -26,7 +26,7 @@ impl Consumer {
         storage: Arc<Storage>,
         queue: String,
         application: String,
-        invisibility_timeout: u32,
+        invisibility_timeout: i32,
         data_tx: Sender<ConsumerItem>,
     ) -> Self {
         let consume_wakeup_task = Arc::new(Notify::new());
@@ -59,7 +59,7 @@ impl Consumer {
         application: String,
         data_tx: Sender<ConsumerItem>,
         notify: Arc<Notify>,
-        invisibility_timeout: u32,
+        invisibility_timeout: i32,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut attempt: u16 = 0;

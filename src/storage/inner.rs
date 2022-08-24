@@ -71,12 +71,12 @@ impl InnerStorage {
         id: &IdPair,
         queue: &str,
         application: &str,
-        invisibility_timeout: u32,
+        invisibility_timeout_ms: i32,
     ) {
         let queue_names = QueueNames::new(queue, application);
 
         let now_millis = Utc::now().timestamp_millis();
-        let expire_time_millis = now_millis + invisibility_timeout as i64;
+        let expire_time_millis = now_millis + invisibility_timeout_ms as i64;
 
         // store id to unack queue
         self.store

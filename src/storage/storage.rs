@@ -43,13 +43,13 @@ impl Storage {
         &self,
         queue: &str,
         application: &str,
-        invisibility_timeout: u32,
+        invisibility_timeout_ms: i32,
     ) -> Option<Message> {
         match self.inner.pop(queue, application) {
             Some(popped_id) => {
                 // store id to unack queue
                 self.inner
-                    .store_unack(&popped_id, queue, application, invisibility_timeout);
+                    .store_unack(&popped_id, queue, application, invisibility_timeout_ms);
                 // get message data from data queue
                 self.inner.get_data(&popped_id, queue)
             }

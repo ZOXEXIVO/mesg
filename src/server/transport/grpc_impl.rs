@@ -45,7 +45,7 @@ where
             .push(PushRequestModel {
                 queue: message.queue,
                 data: Bytes::copy_from_slice(&message.data),
-                is_broadcast: message.is_broadcast
+                is_broadcast: message.is_broadcast,
             })
             .await;
 
@@ -67,7 +67,7 @@ where
             .pull(PullRequestModel {
                 queue: req.queue,
                 application: req.application,
-                invisibility_timeout: req.invisibility_timeout as u32,
+                invisibility_timeout_ms: req.invisibility_timeout_ms,
             })
             .await;
 

@@ -42,7 +42,7 @@ impl Mesg for MesgService {
             .create_consumer(
                 &request.queue,
                 &request.application,
-                request.invisibility_timeout,
+                request.invisibility_timeout_ms,
             )
             .await;
 
@@ -87,7 +87,7 @@ pub struct PushResponseModel {
 pub struct PullRequestModel {
     pub queue: String,
     pub application: String,
-    pub invisibility_timeout: u32,
+    pub invisibility_timeout_ms: Option<i32>,
 }
 
 pub struct PullResponseModel {

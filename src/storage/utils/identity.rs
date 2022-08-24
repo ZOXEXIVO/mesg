@@ -26,8 +26,6 @@ impl Identity {
             })
             .unwrap();
 
-        db.flush_async().await.unwrap();
-
         IdPair::from_value(current_value)
     }
 }

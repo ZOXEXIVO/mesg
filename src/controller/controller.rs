@@ -27,7 +27,7 @@ impl MesgController {
         &self,
         queue: &str,
         application: &str,
-        invisibility_timeout: u32,
+        invisibility_timeout: Option<i32>,
     ) -> MesgConsumer {
         let storage = Arc::clone(&self.storage);
 
@@ -62,7 +62,7 @@ pub struct ConsumerCollection {
     shutdown_tx: UnboundedSender<u32>,
 }
 
-const DEFAULT_INVISIBILITY_TIMEOUT: u32 = 30 * 1000;
+const DEFAULT_INVISIBILITY_TIMEOUT: i32 = 30 * 1000;
 
 impl ConsumerCollection {
     pub fn new() -> Self {
@@ -85,7 +85,7 @@ impl ConsumerCollection {
         storage: Arc<Storage>,
         queue: &str,
         application: &str,
-        invisibility_timeout_ms: u32,
+        invisibility_timeout_ms: Option<i32>,
     ) -> ConsumerHandle {
         let (consumer_data_tx, consumer_data_rx) = channel(1024);
 
@@ -93,19 +93,12 @@ impl ConsumerCollection {
 
         let mut consumers = self.consumers.write().await;
 
-        // setup invisibility timeout
-        let invisibility_timeout_ms = if invisibility_timeout_ms == 0 {
-            DEFAULT_INVISIBILITY_TIMEOUT
-        } else {
-            invisibility_timeout_ms
-        };
-
         let consumer = Consumer::new(
             consumer_id,
             Arc::clone(&storage),
             String::from(queue),
             String::from(application),
-            invisibility_timeout_ms,
+            invisibility_timeout_ms.unwrap_or(DEFAULT_INVISIBILITY_TIMEOUT),
             consumer_data_tx,
         );
 
