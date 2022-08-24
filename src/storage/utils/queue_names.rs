@@ -7,6 +7,7 @@ pub struct QueueNames<'a> {
 
 const READY_QUEUE_POSTFIX: &str = "ready";
 const UNACK_QUEUE_POSTFIX: &str = "unack";
+const UNACK_ORDER_QUEUE_POSTFIX: &str = "unack_order";
 const IDENTITY_POSTFIX: &str = "identity";
 
 const DELIMITER: &str = "_";
@@ -32,6 +33,11 @@ impl<'a> QueueNames<'a> {
     }
 
     #[inline]
+    pub fn unack_order(&self) -> String {
+        format!("{}{}{}", self.base(), DELIMITER, UNACK_ORDER_QUEUE_POSTFIX)
+    }
+
+    #[inline]
     fn base(&self) -> String {
         format!("{}{}{}", self.queue, DELIMITER, self.application)
     }
@@ -41,8 +47,8 @@ impl<'a> QueueNames<'a> {
     }
 
     #[inline]
-    pub fn is_ready(queue_name: &str) -> bool {
-        queue_name.ends_with(READY_QUEUE_POSTFIX)
+    pub fn is_ready_for_queue(db_queue_name: &str, queue: &str) -> bool {
+        db_queue_name.starts_with(queue) && db_queue_name.ends_with(READY_QUEUE_POSTFIX)
     }
 
     #[inline]

@@ -24,42 +24,42 @@ impl ExpiredMessageRestorerJob {
     fn start_new_queues_watcher(&self, storage: Arc<Storage>) {
         let watched_queues = Arc::clone(&self.watched_queues);
 
-        tokio::spawn(async move {
-            loop {
-                let unack_queues = storage.get_unack_queues().await;
-
-                let mut new_queues_to_watch = Vec::with_capacity(unack_queues.len());
-
-                {
-                    let watched_queue_read_guard = watched_queues.read().await;
-
-                    for unack_queue in unack_queues {
-                        if !watched_queue_read_guard.contains(&unack_queue) {
-                            new_queues_to_watch.push(unack_queue);
-                        }
-                    }
-                }
-
-                if !new_queues_to_watch.is_empty() {
-                    let mut watched_queue_write_guard = watched_queues.write().await;
-
-                    for unack_queue in new_queues_to_watch {
-                        watched_queue_write_guard.insert(unack_queue.clone());
-
-                        let (queue_name, application_name) =
-                            QueueNames::parse_queue_application(&unack_queue);
-
-                        Self::start_message_restorer_for_queue(
-                            Arc::clone(&storage),
-                            queue_name.to_owned(),
-                            application_name.to_owned(),
-                        );
-                    }
-                }
-
-                tokio::time::sleep(Duration::from_millis(5000)).await;
-            }
-        });
+        // tokio::spawn(async move {
+        //     loop {
+        //         let unack_queues = storage.get_unack_queues().await;
+        //
+        //         let mut new_queues_to_watch = Vec::with_capacity(unack_queues.len());
+        //
+        //         {
+        //             let watched_queue_read_guard = watched_queues.read().await;
+        //
+        //             for unack_queue in unack_queues {
+        //                 if !watched_queue_read_guard.contains(&unack_queue) {
+        //                     new_queues_to_watch.push(unack_queue);
+        //                 }
+        //             }
+        //         }
+        //
+        //         if !new_queues_to_watch.is_empty() {
+        //             let mut watched_queue_write_guard = watched_queues.write().await;
+        //
+        //             for unack_queue in new_queues_to_watch {
+        //                 watched_queue_write_guard.insert(unack_queue.clone());
+        //
+        //                 let (queue_name, application_name) =
+        //                     QueueNames::parse_queue_application(&unack_queue);
+        //
+        //                 Self::start_message_restorer_for_queue(
+        //                     Arc::clone(&storage),
+        //                     queue_name.to_owned(),
+        //                     application_name.to_owned(),
+        //                 );
+        //             }
+        //         }
+        //
+        //         tokio::time::sleep(Duration::from_millis(5000)).await;
+        //     }
+        //});
     }
 
     fn start_message_restorer_for_queue(storage: Arc<Storage>, queue: String, application: String) {

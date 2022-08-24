@@ -1,34 +1,22 @@
-use crate::storage::identity::Identity;
 use crate::storage::message::Message;
-use crate::storage::QueueNames;
+use crate::storage::{IdPair, InnerStorage, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
-use log::{error, info};
-use rand::{thread_rng, Rng};
-use sled::{Db, IVec, Subscriber};
+use log::{error, info, warn};
+use sled::{IVec, Subscriber};
+use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 
 pub struct Storage {
-    store: Arc<Db>,
+    inner: InnerStorage,
 }
 
 impl Storage {
-    pub fn new() -> Self {
+    pub fn new<T: AsRef<Path>>(path: T) -> Self {
         Storage {
-            store: Arc::new(sled::open("data.mesg").unwrap()),
+            inner: InnerStorage::new(path),
         }
-    }
-
-    pub async fn subscribe(&self, queue: &str, application: &str) -> Subscriber {
-        let queues = QueueNames::new(queue, application);
-
-        info!("subscribed to queue={}", queues.ready());
-
-        self.store
-            .open_tree(queues.ready())
-            .unwrap()
-            .watch_prefix(vec![])
     }
 
     pub async fn push(
@@ -38,65 +26,18 @@ impl Storage {
         is_broadcast: bool,
     ) -> Result<bool, StorageError> {
         // generate message id
-        let (identity_val, identity_vec) = Identity::generate(&self.store, queue).await;
+        let id = self.inner.generate_id(queue).await;
 
-        // store data
-        self.store
-            .open_tree(queue)
-            .unwrap()
-            .insert(&identity_vec, data.to_vec())
-            .unwrap();
+        self.inner.store_data(&id, queue, data);
 
-        info!("store message data, id={}, queue={}", identity_val, queue);
+        info!("store message data, id={}, queue={}", id.value, queue);
 
-        // store message ids
         if is_broadcast {
-            let mut pushed = false;
-
-            for queue in ready_queue_names(&self.store) {
-                self.store
-                    .open_tree(queue)
-                    .unwrap()
-                    .insert(&identity_vec, vec![])
-                    .unwrap();
-
-                pushed = true;
-            }
-
-            return Ok(pushed);
+            // push id to all queue-reciever
+            Ok(self.inner.broadcast_store(queue, id))
         } else {
-            let queue = random_queue_name(&self.store);
-
-            self.store
-                .open_tree(queue)
-                .unwrap()
-                .insert(&identity_vec, vec![])
-                .unwrap();
-
-            return Ok(true);
-        }
-
-        fn get_user_queues(db: &Db) -> Vec<String> {
-            db.tree_names()
-                .into_iter()
-                .filter(|n| n != b"__sled__default")
-                .map(|q| String::from_utf8(q.to_vec()).unwrap())
-                .filter(|q| QueueNames::is_ready(q))
-                .collect()
-        }
-
-        fn ready_queue_names(db: &Db) -> Vec<String> {
-            get_user_queues(db)
-        }
-
-        fn random_queue_name(db: &Db) -> String {
-            let items = get_user_queues(db);
-
-            let mut rng = thread_rng();
-
-            let n = rng.gen_range(0..items.len());
-
-            items[n].clone()
+            // push id to random receiver queue
+            Ok(self.inner.direct_store(queue, id))
         }
     }
 
@@ -106,40 +47,27 @@ impl Storage {
         application: &str,
         invisibility_timeout: u32,
     ) -> Option<Message> {
-        let queue_names = QueueNames::new(queue, application);
-
-        let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-
-        if let Ok(Some((k, _))) = ready_queue.pop_min() {
-            // calculate item expire time
-            let now_millis = Utc::now().timestamp_millis();
-            let expire_time_millis = now_millis + invisibility_timeout as i64;
-
-            let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-            // store { expire_time, message_id } to unack queue
-            unack_queue
-                .insert(
-                    IVec::from(expire_time_millis.to_be_bytes().to_vec()),
-                    k.clone(),
-                )
-                .unwrap();
-
-            let message_data = self.store.open_tree(queue).unwrap();
-
-            let key_bytes: Vec<u8> = k.to_vec();
-
-            let message_data = message_data.get(k).unwrap().unwrap();
-            let val_bytes: Vec<u8> = message_data.to_vec();
-
-            let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
-
-            let value = Bytes::from(val_bytes);
-
-            return Some(Message::new(id, value));
+        match self.inner.pop(queue, application) {
+            Some(popped_id) => {
+                // store id to unack queue
+                self.inner
+                    .store_unack(&popped_id, queue, application, invisibility_timeout);
+                // get message data from data queue
+                self.inner.get_data(&popped_id, queue)
+            }
+            None => None,
         }
+    }
 
-        None
+    pub async fn subscribe(&self, queue: &str, application: &str) -> Subscriber {
+        let subscriber = self.inner.subscribe_to_receiver(queue, application);
+
+        info!(
+            "subscribed for new messages in queue={}, application={}",
+            queue, application
+        );
+
+        subscriber
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
@@ -150,141 +78,102 @@ impl Storage {
     }
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::new(queue, application);
-
-        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-        let id_vec = IVec::from(id.to_be_bytes().to_vec());
-
-        if let Ok(removed) = unack_queue.remove(id_vec.clone()) {
-            if removed.is_some() {
-                info!(
-                    "commit: message removed, id={}, queue={}",
-                    id,
-                    queue_names.unack()
-                );
-
-                let data_queue = self.store.open_tree(queue).unwrap();
-
-                data_queue.remove(id_vec).unwrap();
-
-                info!("commit: message data removed, id={}, queue={}", id, queue);
-
-                return true;
-            }
+        // Remove data from unack queue
+        let removed_id = self.inner.remove_unack(id, queue, application);
+        if removed_id.is_none() {
+            warn!(
+                "commit: not found id in unack queue, id={}, queue={}",
+                id, queue
+            );
+            return false;
         }
 
-        false
+        // Remove data
+        if !self
+            .inner
+            .remove_data(IdPair::new(id, removed_id.unwrap()), queue)
+        {
+            warn!(
+                "commit: data not found in data_queue, id={}, queue={}",
+                id, queue
+            );
+
+            return false;
+        }
+
+        true
     }
 
     pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::new(queue, application);
-
-        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-        let id_vec = IVec::from(id.to_be_bytes().to_vec());
-
-        if let Ok(Some(removed_message)) = unack_queue.remove(id_vec.clone()) {
-            info!(
-                "revert: message removed, id={}, queue={}",
-                id,
-                queue_names.unack()
+        // Remove data from unack queue
+        let removed_id = self.inner.remove_unack(id, queue, application);
+        if removed_id.is_none() {
+            warn!(
+                "revert: not found id in unack queue, id={}, queue={}",
+                id, queue
             );
-
-            let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-
-            ready_queue.insert(id_vec, removed_message).unwrap();
-
-            info!(
-                "revert: message id inserted, id={}, queue={}",
-                id,
-                queue_names.ready()
-            );
-
-            return true;
+            return false;
         }
 
-        false
+        self.inner
+            .store_ready(IdPair::new(id, removed_id.unwrap()), queue, application);
+
+        true
     }
 
     pub async fn try_restore(&self, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::new(queue, application);
-
-        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-        if let Ok(Some((k, v))) = unack_queue.pop_min() {
-            let now_millis = Utc::now().timestamp_millis();
-
-            let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
-            let message_id = u64::from_be_bytes(v.to_vec().try_into().unwrap());
-
-            info!(
-                "check message expiration, id={}, queue={}",
-                message_id, queue
-            );
-
-            if now_millis >= expire_millis {
-                info!(
-                    "unack message expired, restoring, id={}, queue={}",
-                    message_id, queue
-                );
-
-                if let Ok(Some(removed_message)) = unack_queue.remove(v.clone()) {
-                    info!(
-                        "restore: message removed, id={}, queue={}",
-                        message_id,
-                        queue_names.unack()
-                    );
-
-                    let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-
-                    ready_queue.insert(v, removed_message).unwrap();
-                }
-
-                return true;
-            } else {
-                unack_queue.insert(k, v).unwrap();
-                return false;
-            }
-        }
-
         false
-    }
-
-    pub async fn get_unack_queues(&self) -> Vec<String> {
-        self.store
-            .tree_names()
-            .into_iter()
-            .filter(|n| n != b"__sled__default")
-            .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|q| QueueNames::is_unack(q))
-            .collect()
-    }
-
-    pub async fn create_application_queue(&self, queue: &str, application: &str) {
-        let queue_names = QueueNames::new(queue, application);
-
-        self.store.open_tree(queue_names.data()).unwrap();
-        self.store.open_tree(queue_names.unack()).unwrap();
-        self.store.open_tree(queue_names.ready()).unwrap();
-
-        info!(
-            "application queue created, data={}, unack={}, ready={}, application={}",
-            queue_names.data(),
-            queue_names.unack(),
-            queue_names.ready(),
-            application
-        );
+        // let queue_names = QueueNames::new(queue, application);
+        //
+        // let unack_queue = self.inner.open_tree(queue_names.unack()).unwrap();
+        //
+        // if let Ok(Some((k, v))) = unack_queue.pop_min() {
+        //     let now_millis = Utc::now().timestamp_millis();
+        //
+        //     let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
+        //     let message_id = u64::from_be_bytes(v.to_vec().try_into().unwrap());
+        //
+        //     info!(
+        //         "check message expiration, id={}, queue={}",
+        //         message_id, queue
+        //     );
+        //
+        //     if now_millis >= expire_millis {
+        //         info!(
+        //             "unack message expired, restoring, id={}, queue={}",
+        //             message_id, queue
+        //         );
+        //
+        //         if let Ok(Some(removed_message)) = unack_queue.remove(v.clone()) {
+        //             info!(
+        //                 "restore: message removed, id={}, queue={}",
+        //                 message_id,
+        //                 queue_names.unack()
+        //             );
+        //
+        //             let ready_queue = self.inner.open_tree(queue_names.ready()).unwrap();
+        //
+        //             ready_queue.insert(v, removed_message).unwrap();
+        //         }
+        //
+        //         return true;
+        //     } else {
+        //         unack_queue.insert(k, v).unwrap();
+        //         return false;
+        //     }
+        // }
+        //
+        // false
     }
 }
-
-impl Clone for Storage {
-    fn clone(&self) -> Self {
-        Storage {
-            store: Arc::clone(&self.store),
-        }
-    }
-}
+//
+// impl Clone for Storage {
+//     fn clone(&self) -> Self {
+//         Storage {
+//             inner: Arc::clone(&self.inner),
+//         }
+//     }
+// }
 
 #[derive(Error, Debug)]
 pub enum StorageError {

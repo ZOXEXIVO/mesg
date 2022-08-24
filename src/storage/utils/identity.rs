@@ -1,15 +1,15 @@
-﻿use crate::storage::QueueNames;
+﻿use crate::storage::{IdPair, QueueNames};
 use sled::IVec;
 
 pub struct Identity;
 
 impl Identity {
-    pub async fn generate(db: &sled::Db, queue: &str) -> (u64, IVec) {
+    pub async fn generate(db: &sled::Db, queue: &str) -> IdPair {
         let identity_key = QueueNames::identity(queue);
 
         let mut current_value = 0;
 
-        let identity_value = db
+        let _ = db
             .fetch_and_update(identity_key, |old| {
                 let number = match old {
                     Some(bytes) => {
@@ -28,10 +28,6 @@ impl Identity {
 
         db.flush_async().await.unwrap();
 
-        if identity_value.is_none() {
-            return (current_value, IVec::from(&current_value.to_be_bytes()));
-        }
-
-        (current_value, IVec::from(&current_value.to_be_bytes()))
+        IdPair::from_value(current_value)
     }
 }
