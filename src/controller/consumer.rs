@@ -3,7 +3,6 @@ use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
-use sled::Subscriber;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -19,8 +18,6 @@ pub struct Consumer {
 
     queue_watcher_task: JoinHandle<()>,
     stale_events_watcher_task: JoinHandle<()>,
-
-    invisibility_timeout: u32,
 }
 
 impl Consumer {
@@ -46,13 +43,12 @@ impl Consumer {
             stale_events_watcher_task: Consumer::start_stale_events_watcher(
                 id,
                 Arc::clone(&storage),
-                queue.clone(),
-                application.clone(),
+                queue,
+                application,
                 data_tx,
                 consume_wakeup_task,
                 invisibility_timeout,
             ),
-            invisibility_timeout,
         }
     }
 

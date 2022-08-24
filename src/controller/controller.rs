@@ -23,10 +23,6 @@ impl MesgController {
         }
     }
 
-    pub fn start_jobs(&self) {
-        self.background_jobs.start();
-    }
-
     pub async fn create_consumer(
         &self,
         queue: &str,
@@ -54,6 +50,10 @@ impl MesgController {
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
         self.storage.commit(id, queue, application, success).await
     }
+
+    pub fn start_jobs(&self) {
+        self.background_jobs.start();
+    }
 }
 
 pub struct ConsumerCollection {
@@ -61,6 +61,8 @@ pub struct ConsumerCollection {
     consumers: Arc<RwLock<Vec<Consumer>>>,
     shutdown_tx: UnboundedSender<u32>,
 }
+
+const DEFAULT_INVISIBILITY_TIMEOUT: u32 = 30 * 1000;
 
 impl ConsumerCollection {
     pub fn new() -> Self {
@@ -83,7 +85,7 @@ impl ConsumerCollection {
         storage: Arc<Storage>,
         queue: &str,
         application: &str,
-        invisibility_timeout: u32,
+        invisibility_timeout_ms: u32,
     ) -> ConsumerHandle {
         let (consumer_data_tx, consumer_data_rx) = channel(1024);
 
@@ -91,12 +93,19 @@ impl ConsumerCollection {
 
         let mut consumers = self.consumers.write().await;
 
+        // setup invisibility timeout
+        let invisibility_timeout_ms = if invisibility_timeout_ms == 0 {
+            DEFAULT_INVISIBILITY_TIMEOUT
+        } else {
+            invisibility_timeout_ms
+        };
+
         let consumer = Consumer::new(
             consumer_id,
             Arc::clone(&storage),
             String::from(queue),
             String::from(application),
-            invisibility_timeout,
+            invisibility_timeout_ms,
             consumer_data_tx,
         );
 

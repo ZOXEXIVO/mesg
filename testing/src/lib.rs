@@ -118,7 +118,7 @@ mod tests {
 
         if let Ok(stream_item) = pull_stream.message().await {}
 
-        sleep(Duration::from_millis(2000)).await;
+        sleep(Duration::from_millis(5000)).await;
 
         if let Ok(stream_item) = pull_stream.message().await {}
     }

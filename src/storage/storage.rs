@@ -1,11 +1,9 @@
 use crate::storage::message::Message;
-use crate::storage::{IdPair, InnerStorage, QueueNames};
+use crate::storage::{IdPair, InnerStorage};
 use bytes::Bytes;
-use chrono::Utc;
 use log::{error, info, warn};
-use sled::{IVec, Subscriber};
+use sled::Subscriber;
 use std::path::Path;
-use std::sync::Arc;
 use thiserror::Error;
 
 pub struct Storage {
@@ -121,59 +119,45 @@ impl Storage {
         true
     }
 
-    pub async fn try_restore(&self, queue: &str, application: &str) -> bool {
-        false
-        // let queue_names = QueueNames::new(queue, application);
-        //
-        // let unack_queue = self.inner.open_tree(queue_names.unack()).unwrap();
-        //
-        // if let Ok(Some((k, v))) = unack_queue.pop_min() {
-        //     let now_millis = Utc::now().timestamp_millis();
-        //
-        //     let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
-        //     let message_id = u64::from_be_bytes(v.to_vec().try_into().unwrap());
-        //
-        //     info!(
-        //         "check message expiration, id={}, queue={}",
-        //         message_id, queue
-        //     );
-        //
-        //     if now_millis >= expire_millis {
-        //         info!(
-        //             "unack message expired, restoring, id={}, queue={}",
-        //             message_id, queue
-        //         );
-        //
-        //         if let Ok(Some(removed_message)) = unack_queue.remove(v.clone()) {
-        //             info!(
-        //                 "restore: message removed, id={}, queue={}",
-        //                 message_id,
-        //                 queue_names.unack()
-        //             );
-        //
-        //             let ready_queue = self.inner.open_tree(queue_names.ready()).unwrap();
-        //
-        //             ready_queue.insert(v, removed_message).unwrap();
-        //         }
-        //
-        //         return true;
-        //     } else {
-        //         unack_queue.insert(k, v).unwrap();
-        //         return false;
-        //     }
-        // }
-        //
-        // false
+    pub async fn try_restore(&self, queue: &str, application: &str) -> Option<u64> {
+        // TODO Transaction
+
+        // get expired id from unack_order
+        let expired_unack_id = self.inner.get_expired_unack_id(queue, application);
+        expired_unack_id?;
+
+        let (expired_message_id, expired_at) = expired_unack_id.unwrap();
+
+        if !self.inner.has_data(expired_message_id, queue) {
+            return None;
+        }
+
+        // remove from uack queue
+        if let Some(removed_id) = self
+            .inner
+            .remove_unack(expired_message_id, queue, application)
+        {
+            // add id to ready
+            self.inner.store_ready(
+                IdPair::new(expired_message_id, removed_id),
+                queue,
+                application,
+            );
+
+            Some(expired_message_id)
+        } else {
+            // revert unack_order
+            self.inner
+                .store_unack_order(expired_message_id, expired_at, queue, application);
+
+            None
+        }
+    }
+
+    pub fn get_unack_queues(&self) -> Vec<String> {
+        self.inner.get_unack_queues()
     }
 }
-//
-// impl Clone for Storage {
-//     fn clone(&self) -> Self {
-//         Storage {
-//             inner: Arc::clone(&self.inner),
-//         }
-//     }
-// }
 
 #[derive(Error, Debug)]
 pub enum StorageError {

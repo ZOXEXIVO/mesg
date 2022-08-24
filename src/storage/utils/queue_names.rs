@@ -1,5 +1,3 @@
-use std::thread::spawn;
-
 pub struct QueueNames<'a> {
     queue: &'a str,
     application: &'a str,
@@ -15,11 +13,6 @@ const DELIMITER: &str = "_";
 impl<'a> QueueNames<'a> {
     pub const fn new(queue: &'a str, application: &'a str) -> Self {
         QueueNames { queue, application }
-    }
-
-    #[inline]
-    pub fn data(&self) -> &str {
-        self.application
     }
 
     #[inline]
@@ -63,11 +56,5 @@ impl<'a> QueueNames<'a> {
             split_iterator.next().unwrap(),
             split_iterator.next().unwrap(),
         )
-    }
-
-    #[inline]
-    pub fn get_unack_queue_name(unack_queue_name: &str) -> &str {
-        let delim_idx = unack_queue_name.find(DELIMITER).unwrap();
-        &unack_queue_name[0..delim_idx]
     }
 }
