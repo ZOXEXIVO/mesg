@@ -49,11 +49,13 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        self.storage = Some(Arc::new(Storage::new()));
+        self.storage = Some(Arc::new(Storage::new("")));
 
         let cloned_storage = Arc::clone(self.storage.as_ref().unwrap());
 
         let controller = MesgController::new(cloned_storage);
+
+        controller.start_jobs();
 
         let service = MesgService::new(controller);
 

@@ -1,6 +1,6 @@
 [package]
 name = "mesg"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["ZOXEXIVO <zoxexivo@gmail.com>"]
 edition = "2021"
 
@@ -9,7 +9,7 @@ tokio = { version = "1.20.1", features = ["full"] }
 hyper = { version = "0.14.20", features = ["full"] }
 toml = "0.5.9"
 lz4 = "1.23.3"
-serde = "1.0.143"
+serde = "1.0.144"
 tonic = "0.8.0"
 prost = "0.11.0"
 timer = "0.2.0"

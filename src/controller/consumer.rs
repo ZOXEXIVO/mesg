@@ -3,7 +3,6 @@ use crate::metrics::StaticMetricsWriter;
 use crate::storage::{Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
-use sled::Subscriber;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -19,9 +18,6 @@ pub struct Consumer {
 
     queue_watcher_task: JoinHandle<()>,
     stale_events_watcher_task: JoinHandle<()>,
-    revert_restorer_task: JoinHandle<()>,
-
-    invisibility_timeout: u32,
 }
 
 impl Consumer {
@@ -47,18 +43,12 @@ impl Consumer {
             stale_events_watcher_task: Consumer::start_stale_events_watcher(
                 id,
                 Arc::clone(&storage),
-                queue.clone(),
-                application.clone(),
+                queue,
+                application,
                 data_tx,
                 consume_wakeup_task,
                 invisibility_timeout,
             ),
-            revert_restorer_task: Consumer::start_revert_restorer(
-                Arc::clone(&storage),
-                queue,
-                application,
-            ),
-            invisibility_timeout,
         }
     }
 
@@ -119,54 +109,17 @@ impl Consumer {
         application: String,
         notify: Arc<Notify>,
     ) -> JoinHandle<()> {
-        const SUBSCRIPTION_DELAY: u64 = 1000_u64;
-
         tokio::spawn(async move {
-            let mut subscriber: Option<Subscriber>;
+            let mut subscriber = storage.subscribe(&queue, &application).await;
 
-            loop {
-                subscriber = storage.subscribe(&queue, &application).await;
+            info!(
+                "subscribed to queue={}, application={}, consumer_id={}",
+                &queue, &application, consumer_id
+            );
 
-                if subscriber.is_some() {
-                    info!(
-                        "subscribed to queue={}, application={}, consumer_id={}",
-                        &queue, &application, consumer_id
-                    );
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_millis(SUBSCRIPTION_DELAY)).await;
-            }
-
-            let mut data_subscription = subscriber.as_mut().unwrap();
-
-            while let Some(event) = (&mut data_subscription).await {
+            while let Some(event) = (&mut subscriber).await {
                 if let sled::Event::Insert { key: _, value: _ } = event {
                     notify.notify_one();
-                }
-            }
-        })
-    }
-
-    fn start_revert_restorer(
-        storage: Arc<Storage>,
-        queue: String,
-        application: String,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut attempt: u16 = 0;
-
-            loop {
-                if !storage.try_revert(&queue, &application).await {
-                    attempt += 1;
-
-                    if attempt > 50 {
-                        attempt = 0;
-                    }
-
-                    let sleep_time_ms = 100 * attempt;
-
-                    tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
             }
         })
@@ -175,7 +128,6 @@ impl Consumer {
     pub async fn shutdown(&self) {
         self.queue_watcher_task.abort();
         self.stale_events_watcher_task.abort();
-        self.revert_restorer_task.abort();
     }
 }
 

@@ -1,43 +1,20 @@
-use crate::storage::identity::Identity;
 use crate::storage::message::Message;
-use crate::storage::QueueNames;
+use crate::storage::{IdPair, InnerStorage};
 use bytes::Bytes;
-use chrono::Utc;
-use log::{error, info};
-use rand::{thread_rng, Rng};
-use sled::{Db, IVec, Subscriber};
-use std::collections::HashMap;
-use std::sync::Arc;
+use log::{error, info, warn};
+use sled::Subscriber;
+use std::path::Path;
 use thiserror::Error;
-use tokio::sync::RwLock;
 
 pub struct Storage {
-    store: Arc<RwLock<StorageData>>,
+    inner: InnerStorage,
 }
 
 impl Storage {
-    pub fn new() -> Self {
+    pub fn new<T: AsRef<Path>>(path: T) -> Self {
         Storage {
-            store: Arc::new(RwLock::new(StorageData::new())),
+            inner: InnerStorage::new(path),
         }
-    }
-
-    pub async fn subscribe(&self, queue: &str, application: &str) -> Option<Subscriber> {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                let queues = QueueNames::from(queue, application);
-
-                info!("subscribed to queue={}", queues.ready());
-
-                db.open_tree(queues.ready()).unwrap().watch_prefix(vec![])
-            })
-            .await;
-
-        if let Ok(res) = result {
-            return Some(res);
-        }
-
-        None
     }
 
     pub async fn push(
@@ -46,86 +23,19 @@ impl Storage {
         data: Bytes,
         is_broadcast: bool,
     ) -> Result<bool, StorageError> {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                // generate message id
-                let (identity_val, identity_vec) = Identity::get(db, queue);
+        // generate message id
+        let id = self.inner.generate_id(queue).await;
 
-                // store data
-                db.open_tree(queue)
-                    .unwrap()
-                    .insert(&identity_vec, data.to_vec())
-                    .unwrap();
+        self.inner.store_data(&id, queue, data);
 
-                info!("store message data, id={}, queue={}", identity_val, queue);
+        info!("store message data, id={}, queue={}", id.value, queue);
 
-                // store message ids
-                match is_broadcast {
-                    true => broadcast_send(db, identity_val, identity_vec),
-                    false => direct_send(db, identity_val, identity_vec),
-                }
-            })
-            .await;
-
-        return match result {
-            Ok(res) => Ok(res),
-            Err(msg) => Err(StorageError::Generic(msg)),
-        };
-
-        fn broadcast_send(db: &Db, identity_val: u64, identity_vec: IVec) -> bool {
-            let mut pushed = false;
-
-            for queue in ready_queue_names(db) {
-                info!(
-                    "broadcast store message, id={}, queue={}",
-                    identity_val, queue
-                );
-
-                db.open_tree(queue)
-                    .unwrap()
-                    .insert(&identity_vec, vec![])
-                    .unwrap();
-
-                pushed = true;
-            }
-
-            pushed
-        }
-
-        fn direct_send(db: &Db, identity_val: u64, identity_vec: IVec) -> bool {
-            let queue = random_queue_name(db);
-
-            info!("direct store message, id={}, queue={}", identity_val, queue);
-
-            db.open_tree(queue)
-                .unwrap()
-                .insert(&identity_vec, vec![])
-                .unwrap();
-
-            true
-        }
-
-        fn get_user_queues(db: &Db) -> Vec<String> {
-            db.tree_names()
-                .into_iter()
-                .filter(|n| n != b"__sled__default")
-                .map(|q| String::from_utf8(q.to_vec()).unwrap())
-                .filter(|q| QueueNames::is_ready(q))
-                .collect()
-        }
-
-        fn ready_queue_names(db: &Db) -> Vec<String> {
-            get_user_queues(db)
-        }
-
-        fn random_queue_name(db: &Db) -> String {
-            let items = get_user_queues(db);
-
-            let mut rng = thread_rng();
-
-            let n = rng.gen_range(0..items.len());
-
-            items[n].clone()
+        if is_broadcast {
+            // push id to all queue-reciever
+            Ok(self.inner.broadcast_store(queue, id))
+        } else {
+            // push id to random receiver queue
+            Ok(self.inner.direct_store(queue, id))
         }
     }
 
@@ -135,51 +45,27 @@ impl Storage {
         application: &str,
         invisibility_timeout: u32,
     ) -> Option<Message> {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                let queue_names = QueueNames::from(queue, application);
-
-                let ready_queue = db.open_tree(queue_names.ready()).unwrap();
-
-                if let Ok(Some((k, _))) = ready_queue.pop_min() {
-                    // calculate item expire time
-                    let now_millis = Utc::now().timestamp_millis();
-                    let expire_time_millis = now_millis + invisibility_timeout as i64 * 1000;
-
-                    let unack_queue = db.open_tree(queue_names.unack()).unwrap();
-
-                    unack_queue
-                        .insert(
-                            k.clone(),
-                            IVec::from(expire_time_millis.to_be_bytes().to_vec()),
-                        )
-                        .unwrap();
-
-                    let message_data = db.open_tree(queue).unwrap();
-
-                    let key_bytes: Vec<u8> = k.to_vec();
-
-                    let message_data = message_data.get(k).unwrap().unwrap();
-                    let val_bytes: Vec<u8> = message_data.to_vec();
-
-                    let id = u64::from_be_bytes(key_bytes.try_into().unwrap());
-
-                    info!("pop: get message data, id={}, queue={}", id, queue);
-
-                    let value = Bytes::from(val_bytes);
-
-                    return Some(Message::new(id, value));
-                }
-
-                None
-            })
-            .await;
-
-        if let Ok(res) = result {
-            return res;
+        match self.inner.pop(queue, application) {
+            Some(popped_id) => {
+                // store id to unack queue
+                self.inner
+                    .store_unack(&popped_id, queue, application, invisibility_timeout);
+                // get message data from data queue
+                self.inner.get_data(&popped_id, queue)
+            }
+            None => None,
         }
+    }
 
-        None
+    pub async fn subscribe(&self, queue: &str, application: &str) -> Subscriber {
+        let subscriber = self.inner.subscribe_to_receiver(queue, application);
+
+        info!(
+            "subscribed for new messages in queue={}, application={}",
+            queue, application
+        );
+
+        subscriber
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
@@ -190,154 +76,86 @@ impl Storage {
     }
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                let queue_names = QueueNames::from(queue, application);
+        // Remove data from unack queue
+        let removed_id = self.inner.remove_unack(id, queue, application);
+        if removed_id.is_none() {
+            warn!(
+                "commit: not found id in unack queue, id={}, queue={}",
+                id, queue
+            );
+            return false;
+        }
 
-                let unack_queue = db.open_tree(queue_names.unack()).unwrap();
+        // Remove data
+        if !self
+            .inner
+            .remove_data(IdPair::new(id, removed_id.unwrap()), queue)
+        {
+            warn!(
+                "commit: data not found in data_queue, id={}, queue={}",
+                id, queue
+            );
 
-                let id_vec = IVec::from(id.to_be_bytes().to_vec());
+            return false;
+        }
 
-                if let Ok(removed) = unack_queue.remove(id_vec.clone()) {
-                    if removed.is_some() {
-                        info!(
-                            "commit: message removed, id={}, queue={}",
-                            id,
-                            queue_names.unack()
-                        );
-
-                        let data_queue = db.open_tree(queue).unwrap();
-
-                        data_queue.remove(id_vec).unwrap();
-
-                        info!("commit: message data removed, id={}, queue={}", id, queue);
-
-                        return true;
-                    }
-                }
-
-                false
-            })
-            .await;
-
-        result.unwrap_or(false)
+        true
     }
 
     pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                let queue_names = QueueNames::from(queue, application);
+        // Remove data from unack queue
+        let removed_id = self.inner.remove_unack(id, queue, application);
+        if removed_id.is_none() {
+            warn!(
+                "revert: not found id in unack queue, id={}, queue={}",
+                id, queue
+            );
+            return false;
+        }
 
-                let unack_queue = db.open_tree(queue_names.unack()).unwrap();
+        self.inner
+            .store_ready(IdPair::new(id, removed_id.unwrap()), queue, application);
 
-                let id_vec = IVec::from(id.to_be_bytes().to_vec());
-
-                if let Ok(Some(removed_message)) = unack_queue.remove(id_vec.clone()) {
-                    info!(
-                        "revert: message removed, id={}, queue={}",
-                        id,
-                        queue_names.unack()
-                    );
-
-                    let ready_queue = db.open_tree(queue_names.ready()).unwrap();
-
-                    ready_queue.insert(id_vec, removed_message).unwrap();
-
-                    info!(
-                        "revert: message id inserted, id={}, queue={}",
-                        id,
-                        queue_names.ready()
-                    );
-
-                    return true;
-                }
-
-                false
-            })
-            .await;
-
-        result.unwrap_or(false)
+        true
     }
 
-    pub async fn try_revert(&self, queue: &str, application: &str) -> bool {
-        false
-        //self.execute_in_context(queue, move |db| db.transaction(|tx| tx.generate_id()))
-    }
+    pub async fn try_restore(&self, queue: &str, application: &str) -> Option<u64> {
+        // TODO Transaction
 
-    async fn execute_in_context<F: Fn(&Db) -> R, R>(
-        &self,
-        queue: &str,
-        action: F,
-    ) -> Result<R, String> {
-        let read_lock = self.store.read().await;
+        // get expired id from unack_order
+        let expired_unack_id = self.inner.get_expired_unack_id(queue, application);
+        expired_unack_id?;
 
-        if let Some(db) = read_lock.map.get(queue) {
-            let result = action(db);
-            return Ok(result);
+        let (expired_message_id, expired_at) = expired_unack_id.unwrap();
+
+        if !self.inner.has_data(expired_message_id, queue) {
+            return None;
+        }
+
+        // remove from uack queue
+        if let Some(removed_id) = self
+            .inner
+            .remove_unack(expired_message_id, queue, application)
+        {
+            // add id to ready
+            self.inner.store_ready(
+                IdPair::new(expired_message_id, removed_id),
+                queue,
+                application,
+            );
+
+            Some(expired_message_id)
         } else {
-            drop(read_lock);
+            // revert unack_order
+            self.inner
+                .store_unack_order(expired_message_id, expired_at, queue, application);
 
-            let mut write_lock = self.store.write().await;
-
-            if let Ok(db) = sled::open(format!("{queue}.mesg")) {
-                let result = action(&db);
-
-                flush(&db).await;
-
-                write_lock.map.insert(String::from(queue), db);
-
-                return Ok(result);
-            } else {
-                drop(write_lock);
-
-                let read_lock = self.store.read().await;
-
-                if let Some(db) = read_lock.map.get(queue) {
-                    let result = action(db);
-                    return Ok(result);
-                }
-            }
-        }
-
-        return Err(format!("Cannot create queue={}", queue));
-
-        async fn flush(db: &Db) {
-            if let Err(error) = db.flush_async().await {
-                error!("flush error: {}", error)
-            }
+            None
         }
     }
 
-    pub async fn create_application_queue(&self, queue: &str, application: &str) -> bool {
-        let result = self
-            .execute_in_context(queue, move |db| {
-                let queue_names = QueueNames::from(queue, application);
-
-                db.open_tree(queue_names.data()).unwrap();
-                db.open_tree(queue_names.unack()).unwrap();
-                db.open_tree(queue_names.ready()).unwrap();
-
-                info!(
-                    "application queue created, queue={}, unack={}, ready={}, application={}",
-                    queue_names.data(),
-                    queue_names.unack(),
-                    queue_names.ready(),
-                    application
-                );
-
-                true
-            })
-            .await;
-
-        result.unwrap_or(false)
-    }
-}
-
-impl Clone for Storage {
-    fn clone(&self) -> Self {
-        Storage {
-            store: Arc::clone(&self.store),
-        }
+    pub fn get_unack_queues(&self) -> Vec<String> {
+        self.inner.get_unack_queues()
     }
 }
 
@@ -345,16 +163,4 @@ impl Clone for Storage {
 pub enum StorageError {
     #[error("Storage generic error")]
     Generic(String),
-}
-
-struct StorageData {
-    map: HashMap<String, Db>,
-}
-
-impl StorageData {
-    pub fn new() -> Self {
-        StorageData {
-            map: HashMap::new(),
-        }
-    }
 }
