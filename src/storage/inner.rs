@@ -2,7 +2,7 @@ use crate::storage::{IdPair, Identity, Message, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
 use rand::{thread_rng, Rng};
-use sled::{Db, IVec, Subscriber};
+use sled::{Db, Subscriber};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,28 +26,28 @@ impl InnerStorage {
         self.store
             .open_tree(queue)
             .unwrap()
-            .insert(&id.vec, data.to_vec())
+            .insert(&id.vector(), data.to_vec())
             .unwrap();
     }
 
     pub fn get_data(&self, id: &IdPair, queue: &str) -> Option<Message> {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
-        if let Ok(Some(message_data)) = message_data_queue.get(&id.vec) {
+        if let Ok(Some(message_data)) = message_data_queue.get(&id.vector()) {
             let val_bytes: Vec<u8> = message_data.to_vec();
 
             let value = Bytes::from(val_bytes);
 
-            return Some(Message::new(id.value, value));
+            return Some(Message::new(id.value(), value));
         }
 
         None
     }
 
-    pub fn remove_data(&self, id: IdPair, queue: &str) -> bool {
+    pub fn remove_data(&self, id: &IdPair, queue: &str) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
-        if let Ok(Some(_)) = message_data_queue.remove(id.vec) {
+        if let Ok(Some(_)) = message_data_queue.remove(id.vector()) {
             return true;
         }
 
@@ -60,7 +60,7 @@ impl InnerStorage {
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
         if let Ok(Some((k, _))) = ready_queue.pop_min() {
-            return Some(IdPair::from_vec(k));
+            return Some(IdPair::from_vector(k));
         }
 
         None
@@ -82,35 +82,30 @@ impl InnerStorage {
         self.store
             .open_tree(queue_names.unack())
             .unwrap()
-            .insert(&id.vec, vec![])
+            .insert(&id.vector(), vec![])
             .unwrap();
 
         // store { expire_time, message_id } to unack queue
         self.store
             .open_tree(queue_names.unack_order())
             .unwrap()
-            .insert(
-                IdPair::convert_i64_to_vec(expire_time_millis),
-                IdPair::convert_u64_to_vec(id.value),
-            )
+            .insert(IdPair::convert_i64_to_vec(expire_time_millis), id.vector())
             .unwrap();
     }
 
-    pub fn remove_unack(&self, id: u64, queue: &str, application: &str) -> Option<IVec> {
+    pub fn remove_unack(&self, id: &IdPair, queue: &str, application: &str) -> bool {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
-        let id_vec = IdPair::convert_u64_to_vec(id);
-
-        if let Ok(Some(vec)) = unack_queue.remove(id_vec) {
-            return Some(vec);
+        if let Ok(Some(_)) = unack_queue.remove(id.vector()) {
+            true
+        } else {
+            false
         }
-
-        None
     }
 
-    pub fn get_expired_unack_id(&self, queue: &str, application: &str) -> Option<(u64, i64)> {
+    pub fn get_expired_unack_id(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
@@ -120,8 +115,7 @@ impl InnerStorage {
             let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
 
             if now_millis >= expire_millis {
-                let expired_id = u64::from_be_bytes(v.to_vec().try_into().unwrap());
-                return Some((expired_id, expire_millis));
+                return Some((IdPair::from_vector(v), expire_millis));
             } else {
                 unack_order_queue.insert(k, v).unwrap();
             }
@@ -130,26 +124,23 @@ impl InnerStorage {
         None
     }
 
-    pub fn store_unack_order(&self, id: u64, expired_at: i64, queue: &str, application: &str) {
+    pub fn store_unack_order(&self, id: &IdPair, expired_at: i64, queue: &str, application: &str) {
         let queue_names = QueueNames::new(queue, application);
 
         self.store
             .open_tree(queue_names.unack_order())
             .unwrap()
-            .insert(
-                IdPair::convert_i64_to_vec(expired_at),
-                IdPair::convert_u64_to_vec(id),
-            )
+            .insert(IdPair::convert_i64_to_vec(expired_at), id.vector())
             .unwrap();
     }
 
-    pub fn store_ready(&self, id: IdPair, queue: &str, application: &str) {
+    pub fn store_ready(&self, id: &IdPair, queue: &str, application: &str) {
         let queue_names = QueueNames::new(queue, application);
 
         self.store
             .open_tree(queue_names.ready())
             .unwrap()
-            .insert(id.vec, vec![])
+            .insert(id.vector(), vec![])
             .unwrap();
     }
 
@@ -157,11 +148,11 @@ impl InnerStorage {
     pub fn broadcast_store(&self, queue: &str, id: IdPair) -> bool {
         let mut pushed = false;
 
-        for queue in QueueUtils::get_ready_queues(&self.store, queue) {
+        for ready_queue in QueueUtils::get_ready_queues(&self.store, queue) {
             self.store
-                .open_tree(queue)
+                .open_tree(ready_queue)
                 .unwrap()
-                .insert(&id.vec, vec![])
+                .insert(&id.vector(), vec![])
                 .unwrap();
 
             pushed = true;
@@ -176,7 +167,7 @@ impl InnerStorage {
         self.store
             .open_tree(random_queue_name)
             .unwrap()
-            .insert(&id.vec, vec![])
+            .insert(&id.vector(), vec![])
             .unwrap();
 
         true
@@ -195,12 +186,10 @@ impl InnerStorage {
         QueueUtils::get_unack_queues(&self.store)
     }
 
-    pub fn has_data(&self, id: u64, queue: &str) -> bool {
+    pub fn has_data(&self, id: &IdPair, queue: &str) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
-        message_data_queue
-            .contains_key(IdPair::convert_u64_to_vec(id))
-            .unwrap()
+        message_data_queue.contains_key(id.vector()).unwrap()
     }
 }
 

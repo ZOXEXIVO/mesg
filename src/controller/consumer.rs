@@ -1,6 +1,6 @@
 use crate::controller::ConsumerHandle;
 use crate::metrics::StaticMetricsWriter;
-use crate::storage::{Message, Storage};
+use crate::storage::{IdPair, Message, Storage};
 use bytes::Bytes;
 use log::{error, info};
 use std::future::Future;
@@ -77,7 +77,7 @@ impl Consumer {
                     if let Err(err) = data_tx.send(item).await {
                         if !storage.revert_inner(id, &queue, &application).await {
                             error!(
-                                "uncommit error consumer_id={}, id={}, queue={}, application={}, err={}",
+                                "revert_inner error consumer_id={}, id={}, queue={}, application={}, err={}",
                                 consumer_id, id, &queue, &application, err
                             );
                         }

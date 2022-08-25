@@ -18,7 +18,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app1"),
-                invisibility_timeout: 100,
+                invisibility_timeout_ms: None,
             })
             .await
             .unwrap()
@@ -56,7 +56,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app2"),
-                invisibility_timeout: 100,
+                invisibility_timeout_ms: None,
             })
             .await
             .unwrap()
@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn push_broadcast_success() {
+    async fn pull_restored_message_success() {
         let queue = String::from("queue3");
 
         let mut client = create_client().await;
@@ -98,7 +98,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app3"),
-                invisibility_timeout: 1000,
+                invisibility_timeout_ms: Some(3000),
             })
             .await
             .unwrap()
@@ -116,11 +116,16 @@ mod tests {
 
         assert_eq!(true, push_response.success);
 
-        if let Ok(stream_item) = pull_stream.message().await {}
+        for _ in 0..2 {
+            if let Ok(stream_item) = pull_stream.message().await {
+                let item = stream_item.unwrap();
 
-        sleep(Duration::from_millis(5000)).await;
-
-        if let Ok(stream_item) = pull_stream.message().await {}
+                assert_eq!(3, item.data.len());
+                assert_eq!(1, item.data[0]);
+                assert_eq!(2, item.data[1]);
+                assert_eq!(3, item.data[2]);
+            }
+        }
     }
 
     async fn create_client() -> MesgProtocolClient<tonic::transport::Channel> {

@@ -28,7 +28,7 @@ impl Storage {
 
         self.inner.store_data(&id, queue, data);
 
-        info!("store message data, id={}, queue={}", id.value, queue);
+        info!("store message data, id={}, queue={}", id.value(), queue);
 
         if is_broadcast {
             // push id to all queue-reciever
@@ -76,9 +76,9 @@ impl Storage {
     }
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+        let id_pair = IdPair::from_value(id);
         // Remove data from unack queue
-        let removed_id = self.inner.remove_unack(id, queue, application);
-        if removed_id.is_none() {
+        if !self.inner.remove_unack(&id_pair, queue, application) {
             warn!(
                 "commit: not found id in unack queue, id={}, queue={}",
                 id, queue
@@ -87,10 +87,7 @@ impl Storage {
         }
 
         // Remove data
-        if !self
-            .inner
-            .remove_data(IdPair::new(id, removed_id.unwrap()), queue)
-        {
+        if !self.inner.remove_data(&id_pair, queue) {
             warn!(
                 "commit: data not found in data_queue, id={}, queue={}",
                 id, queue
@@ -103,9 +100,10 @@ impl Storage {
     }
 
     pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
+        let id_pair = IdPair::from_value(id);
+
         // Remove data from unack queue
-        let removed_id = self.inner.remove_unack(id, queue, application);
-        if removed_id.is_none() {
+        if !self.inner.remove_unack(&id_pair, queue, application) {
             warn!(
                 "revert: not found id in unack queue, id={}, queue={}",
                 id, queue
@@ -113,8 +111,7 @@ impl Storage {
             return false;
         }
 
-        self.inner
-            .store_ready(IdPair::new(id, removed_id.unwrap()), queue, application);
+        self.inner.store_ready(&id_pair, queue, application);
 
         true
     }
@@ -123,32 +120,31 @@ impl Storage {
         // TODO Transaction
 
         // get expired id from unack_order
-        let expired_unack_id = self.inner.get_expired_unack_id(queue, application);
-        expired_unack_id?;
+        let expired_unack = self.inner.get_expired_unack_id(queue, application);
+        if expired_unack.is_none() {
+            return None;
+        }
 
-        let (expired_message_id, expired_at) = expired_unack_id.unwrap();
+        let (expired_message_id, expired_at) = expired_unack.as_ref().unwrap();
 
         if !self.inner.has_data(expired_message_id, queue) {
             return None;
         }
 
         // remove from uack queue
-        if let Some(removed_id) = self
+        if self
             .inner
             .remove_unack(expired_message_id, queue, application)
         {
             // add id to ready
-            self.inner.store_ready(
-                IdPair::new(expired_message_id, removed_id),
-                queue,
-                application,
-            );
+            self.inner
+                .store_ready(expired_message_id, queue, application);
 
-            Some(expired_message_id)
+            Some(expired_message_id.value())
         } else {
             // revert unack_order
             self.inner
-                .store_unack_order(expired_message_id, expired_at, queue, application);
+                .store_unack_order(expired_message_id, *expired_at, queue, application);
 
             None
         }

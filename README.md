@@ -22,7 +22,8 @@ string queueName =  "test_queue";
 
 var stream = client.Pull(new PullRequest
 {
-    Queue = queueName
+    Queue = queueName,
+    Application = Environment.ComputerName
 }).ResponseStream;
 
 while (await stream.MoveNext(CancellationToken.None))
@@ -41,8 +42,8 @@ while (await stream.MoveNext(CancellationToken.None))
 
 ### TODO
 
-- [ ]  Broadcast push
-- [ ]  Persistence with own storage engine
+- [x]  Broadcast push
+- [x]  Persistence
 - [ ]  Sharding and replication
 
 ### License
