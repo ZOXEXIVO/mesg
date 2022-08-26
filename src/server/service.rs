@@ -1,4 +1,5 @@
-use crate::controller::{MesgConsumer, MesgController};
+use crate::consumer::RawConsumer;
+use crate::controller::MesgController;
 use crate::metrics::StaticMetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -91,7 +92,7 @@ pub struct PullRequestModel {
 }
 
 pub struct PullResponseModel {
-    pub consumer: MesgConsumer,
+    pub consumer: RawConsumer,
 }
 
 // Commit

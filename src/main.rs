@@ -6,6 +6,7 @@ mod controller;
 mod metrics;
 mod server;
 mod storage;
+mod consumer;
 
 use env_logger::Env;
 
