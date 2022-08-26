@@ -3,13 +3,19 @@ use crate::storage::Storage;
 use log::{error, info};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 pub struct StaleEventsWatcher;
 
 impl StaleEventsWatcher {
-    fn start(storage: Arc<Storage>, config: ConsumerConfig, notify: Arc<Notify>) -> JoinHandle<()> {
+    pub fn start(
+        storage: Arc<Storage>,
+        config: ConsumerConfig,
+        notify: Arc<Notify>,
+        data_tx: Sender<ConsumerDto>,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut attempt: u16 = 0;
 

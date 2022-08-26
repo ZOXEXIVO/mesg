@@ -7,7 +7,6 @@ use tokio::sync::Notify;
 
 pub struct Consumer {
     pub id: u32,
-
     jobs: ConsumerJobsCollection,
 }
 
@@ -20,14 +19,14 @@ impl Consumer {
         invisibility_timeout: i32,
         data_tx: Sender<ConsumerDto>,
     ) -> Self {
-        let consume_wakeup_task = Arc::new(Notify::new());
-
         let config = ConsumerConfig::new(id, queue, application, invisibility_timeout);
 
-        let mut jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config);
+        let mut jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
 
         jobs.start();
 
         Consumer { id, jobs }
     }
+
+    pub async fn shutdown(&self) {}
 }
