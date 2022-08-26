@@ -98,11 +98,7 @@ impl InnerStorage {
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
-        if let Ok(Some(_)) = unack_queue.remove(id.vector()) {
-            true
-        } else {
-            false
-        }
+        matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
     pub fn get_expired_unack_id(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {

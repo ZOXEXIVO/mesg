@@ -1,12 +1,9 @@
+use crate::consumer::{ConsumerCollection, ConsumerDto, RawConsumer};
 use crate::controller::jobs::BackgroundJobs;
-use crate::controller::{Consumer, ConsumerItem, ConsumersShutdownWaiter, MesgConsumer};
 use crate::storage::Storage;
 use bytes::Bytes;
-use log::info;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc::{channel, Receiver, UnboundedSender};
-use tokio::sync::RwLock;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 pub struct MesgController {
     storage: Arc<Storage>,
@@ -28,7 +25,7 @@ impl MesgController {
         queue: &str,
         application: &str,
         invisibility_timeout: Option<i32>,
-    ) -> MesgConsumer {
+    ) -> RawConsumer {
         let storage = Arc::clone(&self.storage);
 
         // add consumer
@@ -37,7 +34,7 @@ impl MesgController {
             .add_consumer(storage, queue, application, invisibility_timeout)
             .await;
 
-        MesgConsumer::from(consumer_handle)
+        RawConsumer::from(consumer_handle)
     }
 
     pub async fn push(&self, queue: &str, data: Bytes, is_broadcast: bool) -> bool {
@@ -56,77 +53,10 @@ impl MesgController {
     }
 }
 
-pub struct ConsumerCollection {
-    generator: AtomicU32,
-    consumers: Arc<RwLock<Vec<Consumer>>>,
-    shutdown_tx: UnboundedSender<u32>,
-}
-
-const DEFAULT_INVISIBILITY_TIMEOUT: i32 = 30 * 1000;
-
-impl ConsumerCollection {
-    pub fn new() -> Self {
-        let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let consumers = ConsumerCollection {
-            generator: AtomicU32::new(0),
-            consumers: Arc::new(RwLock::new(Vec::new())),
-            shutdown_tx,
-        };
-
-        // Run shutdown waiter
-        ConsumersShutdownWaiter::wait(Arc::clone(&consumers.consumers), shutdown_rx);
-
-        consumers
-    }
-
-    pub async fn add_consumer(
-        &self,
-        storage: Arc<Storage>,
-        queue: &str,
-        application: &str,
-        invisibility_timeout_ms: Option<i32>,
-    ) -> ConsumerHandle {
-        let (consumer_data_tx, consumer_data_rx) = channel(1024);
-
-        let consumer_id = self.generate_id();
-
-        let mut consumers = self.consumers.write().await;
-
-        let consumer = Consumer::new(
-            consumer_id,
-            Arc::clone(&storage),
-            String::from(queue),
-            String::from(application),
-            invisibility_timeout_ms.unwrap_or(DEFAULT_INVISIBILITY_TIMEOUT),
-            consumer_data_tx,
-        );
-
-        consumers.push(consumer);
-
-        info!(
-            "consumer created, consumer_id={}, queue={}, application={}",
-            consumer_id, queue, application
-        );
-
-        ConsumerHandle {
-            id: consumer_id,
-            queue: queue.into(),
-            application: String::from(application),
-            data_rx: consumer_data_rx,
-            shutdown_tx: self.shutdown_tx.clone(),
-        }
-    }
-
-    fn generate_id(&self) -> u32 {
-        self.generator.fetch_add(1, Ordering::SeqCst)
-    }
-}
-
 pub struct ConsumerHandle {
     pub id: u32,
     pub queue: String,
     pub application: String,
-    pub data_rx: Receiver<ConsumerItem>,
+    pub data_rx: Receiver<ConsumerDto>,
     pub shutdown_tx: UnboundedSender<u32>,
 }
