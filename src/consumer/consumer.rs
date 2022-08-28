@@ -21,12 +21,14 @@ impl Consumer {
     ) -> Self {
         let config = ConsumerConfig::new(id, queue, application, invisibility_timeout);
 
-        let mut jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
+        let jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
 
         jobs.start();
 
         Consumer { id, jobs }
     }
 
-    pub async fn shutdown(&self) {}
+    pub async fn shutdown(&self) {
+        self.jobs.shutdown();
+    }
 }

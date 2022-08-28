@@ -88,7 +88,7 @@ pub struct PushResponseModel {
 pub struct PullRequestModel {
     pub queue: String,
     pub application: String,
-    pub invisibility_timeout_ms: Option<i32>,
+    pub invisibility_timeout_ms: i32,
 }
 
 pub struct PullResponseModel {

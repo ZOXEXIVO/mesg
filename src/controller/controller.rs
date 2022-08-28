@@ -24,7 +24,7 @@ impl MesgController {
         &self,
         queue: &str,
         application: &str,
-        invisibility_timeout: Option<i32>,
+        invisibility_timeout: i32,
     ) -> RawConsumer {
         let storage = Arc::clone(&self.storage);
 

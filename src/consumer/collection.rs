@@ -1,19 +1,17 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use log::info;
-use tokio::sync::RwLock;
 use crate::consumer::{Consumer, ConsumersShutdownWaiter};
 use crate::controller::ConsumerHandle;
 use crate::storage::Storage;
+use log::info;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use tokio::sync::mpsc::{channel, UnboundedSender};
+use tokio::sync::RwLock;
 
 pub struct ConsumerCollection {
     generator: AtomicU32,
     consumers: Arc<RwLock<Vec<Consumer>>>,
     shutdown_tx: UnboundedSender<u32>,
 }
-
-const DEFAULT_INVISIBILITY_TIMEOUT: i32 = 30 * 1000;
 
 impl ConsumerCollection {
     pub fn new() -> Self {
@@ -36,7 +34,7 @@ impl ConsumerCollection {
         storage: Arc<Storage>,
         queue: &str,
         application: &str,
-        invisibility_timeout_ms: Option<i32>,
+        invisibility_timeout_ms: i32,
     ) -> ConsumerHandle {
         let (consumer_data_tx, consumer_data_rx) = channel(1024);
 
@@ -49,7 +47,7 @@ impl ConsumerCollection {
             Arc::clone(&storage),
             String::from(queue),
             String::from(application),
-            invisibility_timeout_ms.unwrap_or(DEFAULT_INVISIBILITY_TIMEOUT),
+            invisibility_timeout_ms,
             consumer_data_tx,
         );
 

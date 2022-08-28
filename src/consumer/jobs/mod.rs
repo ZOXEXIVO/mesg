@@ -44,6 +44,8 @@ impl ConsumerJobsCollection {
             self.data_tx.clone(),
         );
     }
+
+    pub fn shutdown(&self) {}
 }
 
 #[derive(Clone)]
