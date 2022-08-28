@@ -21,7 +21,7 @@ impl Consumer {
     ) -> Self {
         let config = ConsumerConfig::new(id, queue, application, invisibility_timeout);
 
-        let jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
+        let mut jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
 
         jobs.start();
 

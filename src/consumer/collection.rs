@@ -36,7 +36,7 @@ impl ConsumerCollection {
         application: &str,
         invisibility_timeout_ms: i32,
     ) -> ConsumerHandle {
-        let (consumer_data_tx, consumer_data_rx) = channel(1024);
+        let (consumer_data_tx, consumer_data_rx) = channel(4096);
 
         let consumer_id = self.generate_id();
 

@@ -28,8 +28,6 @@ impl Storage {
 
         self.inner.store_data(&id, queue, data);
 
-        info!("store message data, id={}, queue={}", id.value(), queue);
-
         if is_broadcast {
             // push id to all queue-reciever
             Ok(self.inner.broadcast_store(queue, id))

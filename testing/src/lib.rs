@@ -18,7 +18,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app1"),
-                invisibility_timeout_ms: None,
+                invisibility_timeout_ms: 5000,
             })
             .await
             .unwrap()
@@ -56,7 +56,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app2"),
-                invisibility_timeout_ms: None,
+                invisibility_timeout_ms: 5000,
             })
             .await
             .unwrap()
@@ -98,7 +98,7 @@ mod tests {
             .pull(PullRequest {
                 queue: String::clone(&queue),
                 application: String::from("app3"),
-                invisibility_timeout_ms: Some(3000),
+                invisibility_timeout_ms: 3000,
             })
             .await
             .unwrap()
