@@ -1,5 +1,4 @@
-use crate::consumer::{Consumer, ConsumersShutdownWaiter};
-use crate::controller::ConsumerHandle;
+use crate::consumer::{Consumer, ConsumerHandle, ConsumersShutdownWaiter};
 use crate::storage::Storage;
 use log::info;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -8,7 +7,7 @@ use tokio::sync::mpsc::{channel, UnboundedSender};
 use tokio::sync::RwLock;
 
 pub struct ConsumerCollection {
-    generator: AtomicU32,
+    id_generator: AtomicU32,
     consumers: Arc<RwLock<Vec<Consumer>>>,
     shutdown_tx: UnboundedSender<u32>,
 }
@@ -18,7 +17,7 @@ impl ConsumerCollection {
         let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let consumers = ConsumerCollection {
-            generator: AtomicU32::new(0),
+            id_generator: AtomicU32::new(0),
             consumers: Arc::new(RwLock::new(Vec::new())),
             shutdown_tx,
         };
@@ -60,7 +59,7 @@ impl ConsumerCollection {
 
         ConsumerHandle {
             id: consumer_id,
-            queue: queue.into(),
+            queue: String::from(queue),
             application: String::from(application),
             data_rx: consumer_data_rx,
             shutdown_tx: self.shutdown_tx.clone(),
@@ -68,6 +67,6 @@ impl ConsumerCollection {
     }
 
     fn generate_id(&self) -> u32 {
-        self.generator.fetch_add(1, Ordering::SeqCst)
+        self.id_generator.fetch_add(1, Ordering::SeqCst)
     }
 }

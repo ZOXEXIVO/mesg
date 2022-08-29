@@ -1,11 +1,10 @@
-use crate::consumer::ConsumerDto;
+use crate::consumer::{ConsumerDto, ConsumerHandle};
 use crate::metrics::StaticMetricsWriter;
 use log::{error, info};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc::{Receiver, UnboundedSender};
-use crate::controller::ConsumerHandle;
 
 pub struct RawConsumer {
     pub id: u32,
