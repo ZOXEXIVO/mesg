@@ -1,7 +1,6 @@
 use crate::storage::{IdPair, Identity, Message, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
-use color_eyre::owo_colors::OwoColorize;
 use log::{debug, warn};
 use rand::{thread_rng, Rng};
 use sled::{Db, IVec, Subscriber};
@@ -66,6 +65,7 @@ impl InnerStorage {
             .unwrap();
     }
 
+    // TODO
     pub fn decrement_data_usage(&self, queue: &str, id: &IdPair) -> Option<u64> {
         let data_usage_key = QueueNames::data_usage(queue);
 
@@ -225,7 +225,7 @@ impl InnerStorage {
         if let Ok(Some((k, v))) = unack_order_queue.get_gt(now) {
             let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
 
-            if let Err(e) = unack_order_queue.remove(&k) {
+            if let Err(_) = unack_order_queue.remove(&k) {
                 let id = IdPair::from_vector(k);
 
                 warn!(
@@ -260,14 +260,16 @@ impl InnerStorage {
     }
 
     // Storage
-    pub fn broadcast_store(&self, queue: &str, id: IdPair) -> bool {
+    pub fn broadcast_store(&self, queue: &str, id: &IdPair) -> (bool, u32) {
         let mut pushed = false;
 
-        for ready_queue in QueueUtils::get_ready_queues(&self.store, queue) {
+        let ready_queues = QueueUtils::get_ready_queues(&self.store, queue);
+
+        for ready_queue in &ready_queues {
             self.store
                 .open_tree(&ready_queue)
                 .unwrap()
-                .insert(&id.vector(), vec![])
+                .insert(id.vector(), vec![])
                 .unwrap();
 
             debug!(
@@ -280,10 +282,10 @@ impl InnerStorage {
             pushed = true;
         }
 
-        pushed
+        (pushed, ready_queues.len() as u32)
     }
 
-    pub fn direct_store(&self, queue: &str, id: IdPair) -> bool {
+    pub fn direct_store(&self, queue: &str, id: &IdPair) -> bool {
         let random_queue_name = QueueUtils::random_queue_name(&self.store, queue);
 
         self.store

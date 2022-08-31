@@ -49,14 +49,8 @@ impl Future for RawConsumer {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.receiver.poll_recv(cx) {
-            Poll::Ready(item) => {
-                if let Some(item) = item {
-                    Poll::Ready(item)
-                } else {
-                    Poll::Pending
-                }
-            }
-            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(item)) => Poll::Ready(item),
+            _ => Poll::Pending,
         }
     }
 }

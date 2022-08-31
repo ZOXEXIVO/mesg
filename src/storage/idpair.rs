@@ -6,13 +6,6 @@ pub struct IdPair {
 }
 
 impl IdPair {
-    pub fn new(value: u64, vector: IVec) -> Self {
-        IdPair {
-            vector: Some(vector),
-            value: Some(value),
-        }
-    }
-
     pub fn value(&self) -> u64 {
         if let Some(val) = self.value {
             return val;

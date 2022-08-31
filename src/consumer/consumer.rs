@@ -1,9 +1,7 @@
 use crate::consumer::{ConsumerConfig, ConsumerDto, ConsumerJobsCollection};
 use crate::storage::Storage;
-use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::Notify;
 
 pub struct Consumer {
     pub id: u32,

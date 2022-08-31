@@ -30,10 +30,22 @@ impl Storage {
 
         if is_broadcast {
             // push id to all queue-reciever
-            Ok(self.inner.broadcast_store(queue, id))
+            let (success, affected_consumers) = self.inner.broadcast_store(queue, &id);
+
+            if success {
+                self.inner.store_data_usages(queue, &id, affected_consumers);
+            }
+
+            Ok(success)
         } else {
             // push id to random receiver queue
-            Ok(self.inner.direct_store(queue, id))
+            let success = self.inner.direct_store(queue, &id);
+
+            if success {
+                self.inner.store_data_usages(queue, &id, 1);
+            }
+
+            Ok(success)
         }
     }
 
@@ -207,10 +219,4 @@ impl Storage {
     pub fn get_unack_queues(&self) -> Vec<String> {
         self.inner.get_unack_queues()
     }
-}
-
-#[derive(Error, Debug)]
-pub enum StorageError {
-    #[error("Storage generic error")]
-    Generic(String),
 }
