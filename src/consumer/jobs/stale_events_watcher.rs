@@ -1,6 +1,6 @@
 use crate::consumer::{ConsumerConfig, ConsumerDto};
 use crate::storage::Storage;
-use log::{error, info};
+use log::{debug, error};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -21,6 +21,11 @@ impl StaleEventsWatcher {
 
             loop {
                 let notified_task = notify.notified();
+
+                debug!(
+                    "task notified, queue={}, application={}",
+                    &config.queue, &config.application
+                );
 
                 if let Some(message) = storage
                     .pop(
@@ -47,7 +52,7 @@ impl StaleEventsWatcher {
                 } else if attempt > 50 {
                     attempt = 0;
 
-                    info!(
+                    debug!(
                         "consumer parked to queue={}, application={}, consumer_id={}",
                         &config.queue, &config.application, config.consumer_id
                     );
@@ -57,6 +62,11 @@ impl StaleEventsWatcher {
                     attempt += 1;
 
                     let sleep_time_ms = 100 * attempt;
+
+                    debug!(
+                        "watcher sleep for new messages, sleep={}ms, application={}, consumer_id={}",
+                        sleep_time_ms, &config.queue, &config.application
+                    );
 
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }

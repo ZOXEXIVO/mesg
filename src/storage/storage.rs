@@ -1,7 +1,7 @@
 use crate::storage::message::Message;
 use crate::storage::{IdPair, InnerStorage};
 use bytes::Bytes;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use sled::Subscriber;
 use std::path::Path;
 use thiserror::Error;
@@ -45,13 +45,18 @@ impl Storage {
     ) -> Option<Message> {
         match self.inner.pop(queue, application) {
             Some(popped_id) => {
+                debug!("pop success, queue={}, application={}", queue, application);
+
                 // store id to unack queue
                 self.inner
                     .store_unack(&popped_id, queue, application, invisibility_timeout_ms);
                 // get message data from data queue
                 self.inner.get_data(&popped_id, queue)
             }
-            None => None,
+            None => {
+                debug!("pop none, queue={}, application={}", queue, application);
+                None
+            }
         }
     }
 
@@ -75,24 +80,41 @@ impl Storage {
 
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let id_pair = IdPair::from_value(id);
+
+        debug!(
+            "commit_inner, id={}, queue={}, application={}",
+            id, queue, application
+        );
+
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
-            warn!(
-                "commit: not found id in unack queue, id={}, queue={}",
-                id, queue
+            debug!(
+                "commit_inner remove_unack error, id={}, queue={}, application={}",
+                id, queue, application
             );
+
             return false;
         }
+
+        debug!(
+            "commit_inner remove_unack success, id={}, queue={}, application={}",
+            id, queue, application
+        );
 
         // Remove data
         if !self.inner.remove_data(&id_pair, queue) {
             warn!(
-                "commit: data not found in data_queue, id={}, queue={}",
+                "commit_inner: remove_data error, id={}, queue={}",
                 id, queue
             );
 
             return false;
         }
+
+        debug!(
+            "commit_inner remove_data success, id={}, queue={}, application={}",
+            id, queue, application
+        );
 
         true
     }
@@ -103,11 +125,17 @@ impl Storage {
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
             warn!(
-                "revert: not found id in unack queue, id={}, queue={}",
+                "revert_inner remove_unack error: not found id in unack queue, id={}, queue={}",
                 id, queue
             );
+
             return false;
         }
+
+        debug!(
+            "revert_inner remove_unack success, id={}, queue={}, application={}",
+            id, queue, application
+        );
 
         self.inner.store_ready(&id_pair, queue, application);
 
@@ -118,14 +146,27 @@ impl Storage {
         // TODO Transaction
 
         // get expired id from unack_order
-        let expired_unack = self.inner.get_expired_unack_id(queue, application);
+        let expired_unack = self.inner.pop_unack_order(queue, application);
         if expired_unack.is_none() {
             return None;
         }
 
         let (expired_message_id, expired_at) = expired_unack.as_ref().unwrap();
 
+        debug!(
+            "try_restore: expired found, id={}, expired={}, queue={}, application={}",
+            expired_message_id.value(),
+            *expired_at,
+            queue,
+            application
+        );
+
         if !self.inner.has_data(expired_message_id, queue) {
+            debug!(
+                "try_restore: data not found, queue={}, application={}",
+                queue, application
+            );
+
             return None;
         }
 
@@ -134,15 +175,29 @@ impl Storage {
             .inner
             .remove_unack(expired_message_id, queue, application)
         {
+            debug!(
+                "try_restore: remove_unack success, id={}, queue={}, application={}",
+                expired_message_id.value(),
+                queue,
+                application
+            );
+
             // add id to ready
             self.inner
                 .store_ready(expired_message_id, queue, application);
 
             Some(expired_message_id.value())
         } else {
+            debug!(
+                "try_restore: remove_unack error, id={}, queue={}, application={}",
+                expired_message_id.value(),
+                queue,
+                application
+            );
+
             // revert unack_order
-            self.inner
-                .store_unack_order(expired_message_id, *expired_at, queue, application);
+            //self.inner
+            //     .store_unack_order(expired_message_id, *expired_at, queue, application);
 
             None
         }

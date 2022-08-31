@@ -37,7 +37,7 @@ where
     async fn push(
         &self,
         request: Request<PushRequest>,
-    ) -> std::result::Result<tonic::Response<PushResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<PushResponse>, tonic::Status> {
         let message = request.into_inner();
 
         let result = self
@@ -59,7 +59,7 @@ where
     async fn pull(
         &self,
         request: Request<PullRequest>,
-    ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status> {
+    ) -> Result<tonic::Response<Self::PullStream>, tonic::Status> {
         let req = request.into_inner();
 
         let pull_response = self
@@ -79,7 +79,7 @@ where
     async fn commit(
         &self,
         request: Request<CommitRequest>,
-    ) -> std::result::Result<tonic::Response<CommitResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
         let req = request.into_inner();
 
         let commit_response = self
@@ -109,7 +109,7 @@ impl InternalStreamConsumer {
 }
 
 impl Stream for InternalStreamConsumer {
-    type Item = std::result::Result<PullResponse, tonic::Status>;
+    type Item = Result<PullResponse, tonic::Status>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.inner_consumer).poll(cx) {

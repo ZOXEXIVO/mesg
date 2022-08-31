@@ -1,6 +1,6 @@
 use crate::consumer::ConsumerConfig;
 use crate::storage::Storage;
-use log::info;
+use log::{debug, info};
 use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -23,6 +23,11 @@ impl NewEventsWatcher {
 
             while let Some(event) = (&mut subscriber).await {
                 if let sled::Event::Insert { key: _, value: _ } = event {
+                    debug!(
+                        "received insert event, queue={}, application={}",
+                        &config.queue, &config.application
+                    );
+
                     notify.notify_one();
                 }
             }

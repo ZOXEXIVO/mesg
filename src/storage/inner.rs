@@ -1,6 +1,7 @@
 use crate::storage::{IdPair, Identity, Message, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
+use log::debug;
 use rand::{thread_rng, Rng};
 use sled::{Db, Subscriber};
 use std::path::Path;
@@ -28,18 +29,28 @@ impl InnerStorage {
             .unwrap()
             .insert(&id.vector(), data.to_vec())
             .unwrap();
+
+        debug!("data stored, message_id={}, queue={}", id.value(), queue);
     }
 
     pub fn get_data(&self, id: &IdPair, queue: &str) -> Option<Message> {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(message_data)) = message_data_queue.get(&id.vector()) {
+            debug!(
+                "get_data success, message_id={}, queue={}",
+                id.value(),
+                queue
+            );
+
             let val_bytes: Vec<u8> = message_data.to_vec();
 
             let value = Bytes::from(val_bytes);
 
             return Some(Message::new(id.value(), value));
         }
+
+        debug!("get_data none, message_id={}, queue={}", id.value(), queue);
 
         None
     }
@@ -48,8 +59,20 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(_)) = message_data_queue.remove(id.vector()) {
+            debug!(
+                "remove_data success, message_id={}, queue={}",
+                id.value(),
+                queue
+            );
+
             return true;
         }
+
+        debug!(
+            "remove_data none, message_id={}, queue={}",
+            id.value(),
+            queue
+        );
 
         false
     }
@@ -60,8 +83,19 @@ impl InnerStorage {
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
         if let Ok(Some((k, _))) = ready_queue.pop_min() {
-            return Some(IdPair::from_vector(k));
+            let vector = IdPair::from_vector(k);
+
+            debug!(
+                "pop_min success, message_id={}, queue={}, application={}",
+                vector.value(),
+                queue,
+                application
+            );
+
+            return Some(vector);
         }
+
+        debug!("pop_min none, queue={}, application={}", queue, application);
 
         None
     }
@@ -85,12 +119,26 @@ impl InnerStorage {
             .insert(&id.vector(), vec![])
             .unwrap();
 
-        // store { expire_time, message_id } to unack queue
+        debug!(
+            "message stored to unack queue, message_id={}, queue={}, application={}",
+            id.value(),
+            queue,
+            application
+        );
+
+        // store { expire_time, message_id } to unack_order queue
         self.store
             .open_tree(queue_names.unack_order())
             .unwrap()
             .insert(IdPair::convert_i64_to_vec(expire_time_millis), id.vector())
             .unwrap();
+
+        debug!(
+            "message stored to unack_order queue, message_id={}, queue={}, application={}",
+            id.value(),
+            queue,
+            application
+        );
     }
 
     pub fn remove_unack(&self, id: &IdPair, queue: &str, application: &str) -> bool {
@@ -98,36 +146,59 @@ impl InnerStorage {
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
+        debug!(
+            "remove_unack try remove, message_id={}, queue={}",
+            id.value(),
+            queue_names.unack()
+        );
+
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
-    pub fn get_expired_unack_id(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
+    pub fn pop_unack_order(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
+
+        let queeu_states: Vec<u64> = unack_order_queue
+            .iter()
+            .values()
+            .map(|v| {
+                let val = v.unwrap();
+                IdPair::from_vector(val).value()
+            })
+            .collect();
+
+        let mut str = String::new();
+
+        for queeu_state in queeu_states {
+            str += &queeu_state.to_string();
+            str += &", "
+        }
+
+        debug!("unack_order_queue: [{}]", str);
 
         if let Ok(Some((k, v))) = unack_order_queue.pop_min() {
             let now_millis = Utc::now().timestamp_millis();
             let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
 
+            debug!(
+                "pop_unack_order: pop_min success, queue={}, application={}",
+                queue, application
+            );
+
             if now_millis >= expire_millis {
                 return Some((IdPair::from_vector(v), expire_millis));
             } else {
+                debug!(
+                    "pop_unack_order: return back, queue={}, application={}",
+                    queue, application
+                );
                 unack_order_queue.insert(k, v).unwrap();
             }
         }
 
         None
-    }
-
-    pub fn store_unack_order(&self, id: &IdPair, expired_at: i64, queue: &str, application: &str) {
-        let queue_names = QueueNames::new(queue, application);
-
-        self.store
-            .open_tree(queue_names.unack_order())
-            .unwrap()
-            .insert(IdPair::convert_i64_to_vec(expired_at), id.vector())
-            .unwrap();
     }
 
     pub fn store_ready(&self, id: &IdPair, queue: &str, application: &str) {
@@ -138,6 +209,13 @@ impl InnerStorage {
             .unwrap()
             .insert(id.vector(), vec![])
             .unwrap();
+
+        debug!(
+            "message stored to ready queue, message_id={}, queue={}, application={}",
+            id.value(),
+            queue,
+            application
+        );
     }
 
     // Storage
@@ -146,10 +224,17 @@ impl InnerStorage {
 
         for ready_queue in QueueUtils::get_ready_queues(&self.store, queue) {
             self.store
-                .open_tree(ready_queue)
+                .open_tree(&ready_queue)
                 .unwrap()
                 .insert(&id.vector(), vec![])
                 .unwrap();
+
+            debug!(
+                "broadcast message stored to queue, message_id={}, queue={}, application={}",
+                id.value(),
+                queue,
+                &ready_queue
+            );
 
             pushed = true;
         }
@@ -161,10 +246,17 @@ impl InnerStorage {
         let random_queue_name = QueueUtils::random_queue_name(&self.store, queue);
 
         self.store
-            .open_tree(random_queue_name)
+            .open_tree(&random_queue_name)
             .unwrap()
             .insert(&id.vector(), vec![])
             .unwrap();
+
+        debug!(
+            "direct message stored to queue, message_id={}, queue={}, application={}",
+            id.value(),
+            queue,
+            &random_queue_name
+        );
 
         true
     }
@@ -172,6 +264,7 @@ impl InnerStorage {
     pub fn subscribe_to_receiver(&self, queue: &str, application: &str) -> Subscriber {
         let queue_names = QueueNames::new(queue, application);
 
+        debug!("subscribed to queue, queue={}", queue_names.ready());
         self.store
             .open_tree(queue_names.ready())
             .unwrap()

@@ -1,14 +1,15 @@
-extern crate timer;
 extern crate core;
+extern crate timer;
 
 mod cluster;
+mod consumer;
 mod controller;
 mod metrics;
 mod server;
 mod storage;
-mod consumer;
 
 use env_logger::Env;
+use log::LevelFilter;
 
 use crate::server::{MesgServer, MesgServerOptions};
 use structopt::StructOpt;
@@ -43,5 +44,13 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 fn init_logger() {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    let env = Env::default().default_filter_or("debug");
+
+    let mut builder = env_logger::Builder::from_env(env);
+
+    let builder = builder
+        .filter(Some("h2"), LevelFilter::Off)
+        .filter(Some("sled"), LevelFilter::Off);
+
+    builder.init();
 }
