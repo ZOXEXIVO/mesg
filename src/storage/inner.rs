@@ -1,4 +1,4 @@
-use crate::storage::{IdPair, Identity, Message, QueueNames};
+use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
 use log::{debug, warn};
@@ -197,27 +197,7 @@ impl InnerStorage {
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
 
-        //
-
-        let queue_states: Vec<u64> = unack_order_queue
-            .iter()
-            .values()
-            .map(|v| {
-                let val = v.unwrap();
-                IdPair::from_vector(val).value()
-            })
-            .collect();
-
-        let mut str = String::new();
-
-        for queue_state in queue_states {
-            str += &queue_state.to_string();
-            str += &", "
-        }
-
-        debug!("unack_order_queue: [{}]", str);
-
-        //
+        DebugUtils::print_tree(&unack_order_queue, "unack_order_queue");
 
         let now = IdPair::convert_i64_to_vec(Utc::now().timestamp_millis());
 
@@ -225,7 +205,7 @@ impl InnerStorage {
         if let Ok(Some((k, v))) = unack_order_queue.get_gt(now) {
             let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
 
-            if let Err(_) = unack_order_queue.remove(&k) {
+            if unack_order_queue.remove(&k).is_err() {
                 let id = IdPair::from_vector(k);
 
                 warn!(

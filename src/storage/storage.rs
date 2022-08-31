@@ -220,3 +220,6 @@ impl Storage {
         self.inner.get_unack_queues()
     }
 }
+
+#[derive(Error, Debug)]
+pub enum StorageError {}
