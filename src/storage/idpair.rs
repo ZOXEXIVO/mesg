@@ -55,4 +55,9 @@ impl IdPair {
     pub fn convert_i64_to_vec(value: i64) -> IVec {
         IVec::from(value.to_be_bytes().to_vec())
     }
+
+    #[inline]
+    pub fn convert_u32_to_vec(value: u32) -> IVec {
+        IVec::from(value.to_be_bytes().to_vec())
+    }
 }

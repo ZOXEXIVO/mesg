@@ -101,20 +101,23 @@ impl Storage {
             id, queue, application
         );
 
-        // Remove data
-        if !self.inner.remove_data(&id_pair, queue) {
-            warn!(
-                "commit_inner: remove_data error, id={}, queue={}",
-                id, queue
-            );
+        if let Some(data_usage) = self.inner.decrement_data_usage(queue, &id_pair) {
+            if data_usage == 0 {
+                if !self.inner.remove_data(queue, &id_pair) {
+                    warn!(
+                        "commit_inner: remove_data error, id={}, queue={}",
+                        id, queue
+                    );
 
-            return false;
+                    return false;
+                }
+
+                debug!(
+                    "commit_inner remove_data success, id={}, queue={}, application={}",
+                    id, queue, application
+                );
+            }
         }
-
-        debug!(
-            "commit_inner remove_data success, id={}, queue={}, application={}",
-            id, queue, application
-        );
 
         true
     }
@@ -146,10 +149,8 @@ impl Storage {
         // TODO Transaction
 
         // get expired id from unack_order
-        let expired_unack = self.inner.pop_unack_order(queue, application);
-        if expired_unack.is_none() {
-            return None;
-        }
+        let expired_unack = self.inner.pop_expired_unack(queue, application);
+        expired_unack.as_ref()?;
 
         let (expired_message_id, expired_at) = expired_unack.as_ref().unwrap();
 

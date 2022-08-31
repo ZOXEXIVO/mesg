@@ -1,9 +1,10 @@
 use crate::storage::{IdPair, Identity, Message, QueueNames};
 use bytes::Bytes;
 use chrono::Utc;
-use log::debug;
+use color_eyre::owo_colors::OwoColorize;
+use log::{debug, warn};
 use rand::{thread_rng, Rng};
-use sled::{Db, Subscriber};
+use sled::{Db, IVec, Subscriber};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -55,7 +56,43 @@ impl InnerStorage {
         None
     }
 
-    pub fn remove_data(&self, id: &IdPair, queue: &str) -> bool {
+    pub fn store_data_usages(&self, queue: &str, id: &IdPair, usages_count: u32) {
+        let data_usage_key = QueueNames::data_usage(queue);
+
+        self.store
+            .open_tree(data_usage_key)
+            .unwrap()
+            .insert(id.vector(), IdPair::convert_u32_to_vec(usages_count))
+            .unwrap();
+    }
+
+    pub fn decrement_data_usage(&self, queue: &str, id: &IdPair) -> Option<u64> {
+        let data_usage_key = QueueNames::data_usage(queue);
+
+        let mut current_value = 0;
+
+        let _ = self
+            .store
+            .fetch_and_update(data_usage_key, |old| {
+                let number = match old {
+                    Some(bytes) => {
+                        let array: [u8; 8] = bytes.try_into().unwrap();
+                        let number = u64::from_be_bytes(array);
+                        number - 1
+                    }
+                    None => 0,
+                };
+
+                current_value = number - 1;
+
+                Some(IVec::from(&number.to_be_bytes()))
+            })
+            .unwrap();
+
+        Some(current_value)
+    }
+
+    pub fn remove_data(&self, queue: &str, id: &IdPair) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(_)) = message_data_queue.remove(id.vector()) {
@@ -155,12 +192,14 @@ impl InnerStorage {
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
-    pub fn pop_unack_order(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
+    pub fn pop_expired_unack(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
 
-        let queeu_states: Vec<u64> = unack_order_queue
+        //
+
+        let queue_states: Vec<u64> = unack_order_queue
             .iter()
             .values()
             .map(|v| {
@@ -171,31 +210,33 @@ impl InnerStorage {
 
         let mut str = String::new();
 
-        for queeu_state in queeu_states {
-            str += &queeu_state.to_string();
+        for queue_state in queue_states {
+            str += &queue_state.to_string();
             str += &", "
         }
 
         debug!("unack_order_queue: [{}]", str);
 
-        if let Ok(Some((k, v))) = unack_order_queue.pop_min() {
-            let now_millis = Utc::now().timestamp_millis();
+        //
+
+        let now = IdPair::convert_i64_to_vec(Utc::now().timestamp_millis());
+
+        // try get
+        if let Ok(Some((k, v))) = unack_order_queue.get_gt(now) {
             let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
 
-            debug!(
-                "pop_unack_order: pop_min success, queue={}, application={}",
-                queue, application
-            );
+            if let Err(e) = unack_order_queue.remove(&k) {
+                let id = IdPair::from_vector(k);
 
-            if now_millis >= expire_millis {
-                return Some((IdPair::from_vector(v), expire_millis));
-            } else {
-                debug!(
-                    "pop_unack_order: return back, queue={}, application={}",
-                    queue, application
-                );
-                unack_order_queue.insert(k, v).unwrap();
+                warn!(
+                    "unack remove error: not found id={}, queue={}, application={}",
+                    id.value(),
+                    queue,
+                    application
+                )
             }
+
+            return Some((IdPair::from_vector(v), expire_millis));
         }
 
         None
@@ -291,7 +332,7 @@ impl QueueUtils {
             .into_iter()
             .filter(|n| n != b"__sled__default")
             .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|db_queue| QueueNames::is_ready_for_queue(db_queue, queue))
+            .filter(|db_queue| QueueNames::is_ready(db_queue, queue))
             .collect()
     }
 
