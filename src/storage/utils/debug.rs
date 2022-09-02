@@ -1,26 +1,26 @@
 ﻿use crate::storage::IdPair;
-use sled::Tree;
+use sled::{IVec, Tree};
 
 pub struct DebugUtils;
 
 impl DebugUtils {
-    pub fn print_tree(tree: &Tree, name: &str) {
-        let queue_states: Vec<u64> = tree
-            .iter()
-            .values()
+    pub fn print_keys_tree(tree: &Tree, title: &str) {
+        Self::print_generic(title, tree.iter().keys());
+    }
+
+    pub fn print_values_tree(tree: &Tree, title: &str) {
+        Self::print_generic(title, tree.iter().values());
+    }
+
+    #[inline]
+    fn print_generic(title: &str, items: impl Iterator<Item = sled::Result<IVec>>) {
+        let state: Vec<String> = items
             .map(|v| {
                 let val = v.unwrap();
-                IdPair::from_vector(val).value()
+                IdPair::from_vector(val).value().to_string()
             })
             .collect();
 
-        let mut str = String::new();
-
-        for queue_state in queue_states {
-            str += &queue_state.to_string();
-            str += ", "
-        }
-
-        println!("tree state: {}: [{}]", name, str);
+        println!("tree state: {}: [{}]", title, state.join(","));
     }
 }

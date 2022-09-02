@@ -57,8 +57,6 @@ impl Storage {
     ) -> Option<Message> {
         match self.inner.pop(queue, application) {
             Some(popped_id) => {
-                debug!("pop success, queue={}, application={}", queue, application);
-
                 // store id to unack queue
                 self.inner
                     .store_unack(&popped_id, queue, application, invisibility_timeout_ms);

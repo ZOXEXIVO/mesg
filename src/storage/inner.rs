@@ -37,12 +37,6 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(message_data)) = message_data_queue.get(&id.vector()) {
-            debug!(
-                "get_data success, message_id={}, queue={}",
-                id.value(),
-                queue
-            );
-
             let val_bytes: Vec<u8> = message_data.to_vec();
 
             let value = Bytes::from(val_bytes);
@@ -156,22 +150,16 @@ impl InnerStorage {
             .insert(&id.vector(), vec![])
             .unwrap();
 
-        debug!(
-            "message stored to unack queue, message_id={}, queue={}, application={}",
-            id.value(),
-            queue,
-            application
-        );
-
         // store { expire_time, message_id } to unack_order queue
-        self.store
-            .open_tree(queue_names.unack_order())
-            .unwrap()
+        let unack_order = self.store.open_tree(queue_names.unack_order()).unwrap();
+
+        // TODO FIX
+        unack_order
             .insert(IdPair::convert_i64_to_vec(expire_time_millis), id.vector())
             .unwrap();
 
         debug!(
-            "message stored to unack_order queue, message_id={}, queue={}, application={}",
+            "message stored to unack, unack_order queue, message_id={}, queue={}, application={}",
             id.value(),
             queue,
             application
@@ -183,12 +171,6 @@ impl InnerStorage {
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
-        debug!(
-            "remove_unack try remove, message_id={}, queue={}",
-            id.value(),
-            queue_names.unack()
-        );
-
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
@@ -196,8 +178,18 @@ impl InnerStorage {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
+        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
+        let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
-        DebugUtils::print_tree(&unack_order_queue, "unack_order_queue");
+        #[cfg(debug_assertions)]
+        DebugUtils::print_keys_tree(&ready_queue, &format!("ready: {} {}", queue, application));
+        #[cfg(debug_assertions)]
+        DebugUtils::print_keys_tree(&unack_queue, &format!("unack: {} {}", queue, application));
+        #[cfg(debug_assertions)]
+        DebugUtils::print_values_tree(
+            &unack_order_queue,
+            &format!("unack_order: {} {}", queue, application),
+        );
 
         let now = IdPair::convert_i64_to_vec(Utc::now().timestamp_millis());
 
@@ -288,6 +280,7 @@ impl InnerStorage {
         let queue_names = QueueNames::new(queue, application);
 
         debug!("subscribed to queue, queue={}", queue_names.ready());
+
         self.store
             .open_tree(queue_names.ready())
             .unwrap()
