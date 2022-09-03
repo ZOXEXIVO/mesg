@@ -153,9 +153,16 @@ impl InnerStorage {
         // store { expire_time, message_id } to unack_order queue
         let unack_order = self.store.open_tree(queue_names.unack_order()).unwrap();
 
-        // TODO FIX
+        let expire_vector = IdPair::convert_i64_to_vec(expire_time_millis);
+        let id_vector = id.vector();
+
+        let mut result_vector: Vec<u8> = Vec::with_capacity(expire_vector.len() + id_vector.len());
+
+        result_vector.append(&mut expire_vector.to_vec());
+        result_vector.append(&mut id_vector.to_vec());
+
         unack_order
-            .insert(IdPair::convert_i64_to_vec(expire_time_millis), id.vector())
+            .insert(IVec::from(result_vector), id.vector())
             .unwrap();
 
         debug!(
@@ -195,7 +202,9 @@ impl InnerStorage {
 
         // try get
         if let Ok(Some((k, v))) = unack_order_queue.get_gt(now) {
-            let expire_millis = i64::from_be_bytes(k.to_vec().try_into().unwrap());
+            let vector = k.to_vec().as_slice()[0..8].to_vec();
+
+            let expire_millis = i64::from_be_bytes(vector.try_into().unwrap());
 
             if unack_order_queue.remove(&k).is_err() {
                 let id = IdPair::from_vector(k);
