@@ -1,20 +1,26 @@
-use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames};
+use crate::storage::collections::order_queue::UnackOrderQueue;
+use crate::storage::collections::InMemoryStructures;
+use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
 use chrono::Utc;
 use log::{debug, warn};
-use rand::{thread_rng, Rng};
 use sled::{Db, IVec, Subscriber};
 use std::path::Path;
 use std::sync::Arc;
 
 pub struct InnerStorage {
     store: Arc<Db>,
+    memory_data: InMemoryStructures,
 }
 
 impl InnerStorage {
-    pub fn new<T: AsRef<Path>>(_: T) -> Self {
+    pub async fn new<T: AsRef<Path>>(_: T) -> Self {
+        let storage = sled::open("data.mesg").unwrap();
+        let memory_data = InMemoryStructures::from_db(&storage);
+
         InnerStorage {
-            store: Arc::new(sled::open("data.mesg").unwrap()),
+            store: Arc::new(storage),
+            memory_data,
         }
     }
 
@@ -59,25 +65,26 @@ impl InnerStorage {
             .unwrap();
     }
 
-    // TODO
-    pub fn decrement_data_usage(&self, queue: &str, id: &IdPair) -> Option<u64> {
-        let data_usage_key = QueueNames::data_usage(queue);
+    pub fn decrement_data_usage(&self, queue: &str, id: &IdPair) -> Option<u32> {
+        let data_queue_name = QueueNames::data_usage(queue);
 
         let mut current_value = 0;
 
         let _ = self
             .store
-            .fetch_and_update(data_usage_key, |old| {
+            .open_tree(data_queue_name)
+            .unwrap()
+            .fetch_and_update(id.vector(), |old| {
                 let number = match old {
                     Some(bytes) => {
-                        let array: [u8; 8] = bytes.try_into().unwrap();
-                        let number = u64::from_be_bytes(array);
+                        let array: [u8; 4] = bytes.try_into().unwrap();
+                        let number = u32::from_be_bytes(array);
                         number - 1
                     }
                     None => 0,
                 };
 
-                current_value = number - 1;
+                current_value = number;
 
                 Some(IVec::from(&number.to_be_bytes()))
             })
@@ -126,12 +133,10 @@ impl InnerStorage {
             return Some(vector);
         }
 
-        debug!("pop_min none, queue={}, application={}", queue, application);
-
         None
     }
 
-    pub fn store_unack(
+    pub async fn store_unack(
         &self,
         id: &IdPair,
         queue: &str,
@@ -150,20 +155,18 @@ impl InnerStorage {
             .insert(&id.vector(), vec![])
             .unwrap();
 
-        // store { expire_time, message_id } to unack_order queue
+        // store expiration data to in_memory queue
+        self.memory_data
+            .unack_order_data
+            .add(queue_names.unack_order(), id.value(), expire_time_millis)
+            .await;
+
+        // store { message_id, expire_time } to unack_order queue
         let unack_order = self.store.open_tree(queue_names.unack_order()).unwrap();
 
         let expire_vector = IdPair::convert_i64_to_vec(expire_time_millis);
-        let id_vector = id.vector();
 
-        let mut result_vector: Vec<u8> = Vec::with_capacity(expire_vector.len() + id_vector.len());
-
-        result_vector.append(&mut expire_vector.to_vec());
-        result_vector.append(&mut id_vector.to_vec());
-
-        unack_order
-            .insert(IVec::from(result_vector), id.vector())
-            .unwrap();
+        unack_order.insert(&id.vector(), expire_vector).unwrap();
 
         debug!(
             "message stored to unack, unack_order queue, message_id={}, queue={}, application={}",
@@ -181,10 +184,13 @@ impl InnerStorage {
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
-    pub fn pop_expired_unack(&self, queue: &str, application: &str) -> Option<(IdPair, i64)> {
+    pub async fn pop_expired_unacks(&self, queue: &str, application: &str) -> Option<Vec<IdPair>> {
+        let now = Utc::now().timestamp_millis();
+
         let queue_names = QueueNames::new(queue, application);
 
         let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
+
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
@@ -192,35 +198,35 @@ impl InnerStorage {
         DebugUtils::print_keys_tree(&ready_queue, &format!("ready: {} {}", queue, application));
         #[cfg(debug_assertions)]
         DebugUtils::print_keys_tree(&unack_queue, &format!("unack: {} {}", queue, application));
-        #[cfg(debug_assertions)]
-        DebugUtils::print_values_tree(
-            &unack_order_queue,
-            &format!("unack_order: {} {}", queue, application),
-        );
 
-        let now = IdPair::convert_i64_to_vec(Utc::now().timestamp_millis());
+        // store expiration data to in_memory queue
+        let expired_data = self
+            .memory_data
+            .unack_order_data
+            .get_expired(queue_names.unack_order(), now)
+            .await;
 
-        // try get
-        if let Ok(Some((k, v))) = unack_order_queue.get_gt(now) {
-            let vector = k.to_vec().as_slice()[0..8].to_vec();
+        if let Some(expired_items) = expired_data {
+            for expired_id in &expired_items {
+                let id_vec = IdPair::convert_u64_to_vec(*expired_id);
 
-            let expire_millis = i64::from_be_bytes(vector.try_into().unwrap());
-
-            if unack_order_queue.remove(&k).is_err() {
-                let id = IdPair::from_vector(k);
-
-                warn!(
-                    "unack remove error: not found id={}, queue={}, application={}",
-                    id.value(),
-                    queue,
-                    application
-                )
+                if unack_order_queue.remove(&id_vec).is_err() {
+                    warn!(
+                        "unack remove error: not found id={}, queue={}, application={}",
+                        *expired_id, queue, application
+                    )
+                }
             }
 
-            return Some((IdPair::from_vector(v), expire_millis));
-        }
+            let result: Vec<IdPair> = expired_items
+                .iter()
+                .map(|e| IdPair::from_value(*e))
+                .collect();
 
-        None
+            Some(result)
+        } else {
+            None
+        }
     }
 
     pub fn store_ready(&self, id: &IdPair, queue: &str, application: &str) {
@@ -304,38 +310,5 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         message_data_queue.contains_key(id.vector()).unwrap()
-    }
-}
-
-// QueueNames helper
-pub struct QueueUtils;
-
-impl QueueUtils {
-    pub fn get_ready_queues(db: &Db, queue: &str) -> Vec<String> {
-        db.tree_names()
-            .into_iter()
-            .filter(|n| n != b"__sled__default")
-            .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|db_queue| QueueNames::is_ready(db_queue, queue))
-            .collect()
-    }
-
-    pub fn get_unack_queues(db: &Db) -> Vec<String> {
-        db.tree_names()
-            .into_iter()
-            .filter(|n| n != b"__sled__default")
-            .map(|q| String::from_utf8(q.to_vec()).unwrap())
-            .filter(|q| QueueNames::is_unack(q))
-            .collect()
-    }
-
-    pub fn random_queue_name(db: &Db, queue: &str) -> String {
-        let items = Self::get_ready_queues(db, queue);
-
-        let mut rng = thread_rng();
-
-        let n = rng.gen_range(0..items.len());
-
-        items[n].clone()
     }
 }

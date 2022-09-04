@@ -49,7 +49,9 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        self.storage = Some(Arc::new(Storage::new("")));
+        let storage = Storage::new("").await;
+
+        self.storage = Some(Arc::new(storage));
 
         let cloned_storage = Arc::clone(self.storage.as_ref().unwrap());
 

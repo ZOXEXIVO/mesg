@@ -11,9 +11,9 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub fn new<T: AsRef<Path>>(path: T) -> Self {
+    pub async fn new<T: AsRef<Path>>(path: T) -> Self {
         Storage {
-            inner: InnerStorage::new(path),
+            inner: InnerStorage::new(path).await,
         }
     }
 
@@ -59,14 +59,12 @@ impl Storage {
             Some(popped_id) => {
                 // store id to unack queue
                 self.inner
-                    .store_unack(&popped_id, queue, application, invisibility_timeout_ms);
+                    .store_unack(&popped_id, queue, application, invisibility_timeout_ms)
+                    .await;
                 // get message data from data queue
                 self.inner.get_data(&popped_id, queue)
             }
-            None => {
-                debug!("pop none, queue={}, application={}", queue, application);
-                None
-            }
+            None => None,
         }
     }
 
@@ -155,63 +153,44 @@ impl Storage {
         true
     }
 
-    pub async fn try_restore(&self, queue: &str, application: &str) -> Option<u64> {
-        // TODO Transaction
-
+    pub async fn try_restore(&self, queue: &str, application: &str) -> Option<Vec<u64>> {
         // get expired id from unack_order
-        let expired_unack = self.inner.pop_expired_unack(queue, application);
-        expired_unack.as_ref()?;
+        if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
+            for expired_item in &expired_unacks {
+                // check for data
+                if !self.inner.has_data(&expired_item, queue) {
+                    debug!(
+                        "try_restore: data not found, queue={}, application={}",
+                        queue, application
+                    );
+                }
 
-        let (expired_message_id, expired_at) = expired_unack.as_ref().unwrap();
+                // remove unack
+                if self.inner.remove_unack(&expired_item, queue, application) {
+                    debug!(
+                        "try_restore: remove_unack success, id={}, queue={}, application={}",
+                        expired_item.value(),
+                        queue,
+                        application
+                    );
 
-        debug!(
-            "try_restore: expired found, id={}, expired={}, queue={}, application={}",
-            expired_message_id.value(),
-            *expired_at,
-            queue,
-            application
-        );
+                    // add id to ready
+                    self.inner.store_ready(&expired_item, queue, application);
+                } else {
+                    debug!(
+                        "try_restore: remove_unack error, id={}, queue={}, application={}",
+                        expired_item.value(),
+                        queue,
+                        application
+                    );
+                }
+            }
 
-        if !self.inner.has_data(expired_message_id, queue) {
-            debug!(
-                "try_restore: data not found, queue={}, application={}",
-                queue, application
-            );
-
-            return None;
+            let result: Vec<u64> = expired_unacks.into_iter().map(|e| e.value()).collect();
+            return Some(result);
         }
 
-        // remove from uack queue
-        if self
-            .inner
-            .remove_unack(expired_message_id, queue, application)
-        {
-            debug!(
-                "try_restore: remove_unack success, id={}, queue={}, application={}",
-                expired_message_id.value(),
-                queue,
-                application
-            );
-
-            // add id to ready
-            self.inner
-                .store_ready(expired_message_id, queue, application);
-
-            Some(expired_message_id.value())
-        } else {
-            debug!(
-                "try_restore: remove_unack error, id={}, queue={}, application={}",
-                expired_message_id.value(),
-                queue,
-                application
-            );
-
-            // revert unack_order
-            //self.inner
-            //     .store_unack_order(expired_message_id, *expired_at, queue, application);
-
-            None
-        }
+        return None;
     }
 
     pub fn get_unack_queues(&self) -> Vec<String> {

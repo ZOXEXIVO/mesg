@@ -32,7 +32,7 @@ impl<'a> QueueNames<'a> {
     }
 
     #[inline]
-    fn base(&self) -> String {
+    pub fn base(&self) -> String {
         format!("{}{}{}", self.queue, DELIMITER, self.application)
     }
 
@@ -41,13 +41,18 @@ impl<'a> QueueNames<'a> {
     }
 
     #[inline]
-    pub fn is_ready(db_queue_name: &str, queue: &str) -> bool {
-        db_queue_name.starts_with(queue) && db_queue_name.ends_with(READY_QUEUE_POSTFIX)
+    pub fn is_ready(queue_name: &str, queue: &str) -> bool {
+        queue_name.starts_with(queue) && queue_name.ends_with(READY_QUEUE_POSTFIX)
     }
 
     #[inline]
     pub fn is_unack(queue_name: &str) -> bool {
         queue_name.ends_with(UNACK_QUEUE_POSTFIX)
+    }
+
+    #[inline]
+    pub fn is_unack_order(queue_name: &str) -> bool {
+        queue_name.ends_with(UNACK_ORDER_QUEUE_POSTFIX)
     }
 
     pub fn parse_queue_application(unack_queue_name: &str) -> (&str, &str) {
