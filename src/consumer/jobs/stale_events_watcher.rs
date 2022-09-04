@@ -22,11 +22,6 @@ impl StaleEventsWatcher {
             loop {
                 let notified_task = notify.notified();
 
-                debug!(
-                    "task notified, queue={}, application={}",
-                    &config.queue, &config.application
-                );
-
                 if let Some(message) = storage
                     .pop(
                         &config.queue,
@@ -58,15 +53,15 @@ impl StaleEventsWatcher {
                     );
 
                     notified_task.await;
+
+                    debug!(
+                        "task notified, queue={}, application={}",
+                        &config.queue, &config.application
+                    );
                 } else {
                     attempt += 1;
 
                     let sleep_time_ms = 100 * attempt;
-
-                    debug!(
-                        "watcher sleep for new messages, sleep={}ms, application={}, consumer_id={}",
-                        sleep_time_ms, &config.queue, &config.application
-                    );
 
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }

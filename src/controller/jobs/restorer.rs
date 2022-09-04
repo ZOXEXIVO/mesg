@@ -66,10 +66,15 @@ impl ExpiredMessageRestorerJob {
             let mut attempt: u16 = 0;
 
             loop {
-                if let Some(restored_id) = storage.try_restore(&queue, &application).await {
+                if let Some(restored_unacks) = storage.try_restore(&queue, &application).await {
+                    let ids: Vec<String> =
+                        restored_unacks.iter().map(|ri| ri.to_string()).collect();
+
                     info!(
-                        "message restored, id={} in queue={}, application={}",
-                        restored_id, queue, application
+                        "message restored, ids=[{}] in queue={}, application={}",
+                        ids.join(","),
+                        queue,
+                        application
                     );
                 } else {
                     attempt += 1;
