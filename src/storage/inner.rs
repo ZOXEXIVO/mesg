@@ -194,6 +194,7 @@ impl InnerStorage {
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
+        // Debug
         #[cfg(debug_assertions)]
         DebugUtils::print_keys_tree(&ready_queue, &format!("ready: {} {}", queue, application));
         #[cfg(debug_assertions)]

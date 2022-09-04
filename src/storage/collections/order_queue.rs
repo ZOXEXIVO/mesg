@@ -12,7 +12,7 @@ pub struct UnackOrderData {
 
 impl UnackOrderData {
     pub fn from_db(db: &Db) -> Self {
-        let mut result = DashMap::new();
+        let result = DashMap::new();
 
         for unack_order_queue in QueueUtils::get_unack_order_queues(db) {
             let (queue, application) = QueueNames::parse_queue_application(&unack_order_queue);

@@ -50,7 +50,7 @@ impl IdPair {
     }
     #[inline]
     pub fn convert_vec_to_i64(vec: IVec) -> i64 {
-        return i64::from_be_bytes(vec.to_vec().try_into().unwrap());
+        i64::from_be_bytes(vec.to_vec().try_into().unwrap())
     }
 
     #[inline]

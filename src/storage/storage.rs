@@ -89,11 +89,6 @@ impl Storage {
     pub async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
         let id_pair = IdPair::from_value(id);
 
-        debug!(
-            "commit_inner, id={}, queue={}, application={}",
-            id, queue, application
-        );
-
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
             debug!(
@@ -104,26 +99,14 @@ impl Storage {
             return false;
         }
 
-        debug!(
-            "commit_inner remove_unack success, id={}, queue={}, application={}",
-            id, queue, application
-        );
-
         if let Some(data_usage) = self.inner.decrement_data_usage(queue, &id_pair) {
-            if data_usage == 0 {
-                if !self.inner.remove_data(queue, &id_pair) {
-                    warn!(
-                        "commit_inner: remove_data error, id={}, queue={}",
-                        id, queue
-                    );
-
-                    return false;
-                }
-
-                debug!(
-                    "commit_inner remove_data success, id={}, queue={}, application={}",
-                    id, queue, application
+            if data_usage == 0 && !self.inner.remove_data(queue, &id_pair) {
+                warn!(
+                    "commit_inner: remove_data error, id={}, queue={}",
+                    id, queue
                 );
+
+                return false;
             }
         }
 
@@ -143,47 +126,16 @@ impl Storage {
             return false;
         }
 
-        debug!(
-            "revert_inner remove_unack success, id={}, queue={}, application={}",
-            id, queue, application
-        );
-
         self.inner.store_ready(&id_pair, queue, application);
 
         true
     }
 
     pub async fn try_restore(&self, queue: &str, application: &str) -> Option<Vec<u64>> {
-        // get expired id from unack_order
         if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
+            // process expired items
             for expired_item in &expired_unacks {
-                // check for data
-                if !self.inner.has_data(&expired_item, queue) {
-                    debug!(
-                        "try_restore: data not found, queue={}, application={}",
-                        queue, application
-                    );
-                }
-
-                // remove unack
-                if self.inner.remove_unack(&expired_item, queue, application) {
-                    debug!(
-                        "try_restore: remove_unack success, id={}, queue={}, application={}",
-                        expired_item.value(),
-                        queue,
-                        application
-                    );
-
-                    // add id to ready
-                    self.inner.store_ready(&expired_item, queue, application);
-                } else {
-                    debug!(
-                        "try_restore: remove_unack error, id={}, queue={}, application={}",
-                        expired_item.value(),
-                        queue,
-                        application
-                    );
-                }
+                process_expired_item(&self.inner, expired_item, queue, application);
             }
 
             let result: Vec<u64> = expired_unacks.into_iter().map(|e| e.value()).collect();
@@ -191,6 +143,41 @@ impl Storage {
         }
 
         return None;
+
+        fn process_expired_item(
+            inner: &InnerStorage,
+            expired_item: &IdPair,
+            queue: &str,
+            application: &str,
+        ) {
+            // check for data
+            if !inner.has_data(expired_item, queue) {
+                debug!(
+                    "try_restore: data not found, queue={}, application={}",
+                    queue, application
+                );
+            }
+
+            // remove unack
+            if inner.remove_unack(expired_item, queue, application) {
+                debug!(
+                    "try_restore: remove_unack success, id={}, queue={}, application={}",
+                    expired_item.value(),
+                    queue,
+                    application
+                );
+
+                // add id to ready
+                inner.store_ready(expired_item, queue, application);
+            } else {
+                debug!(
+                    "try_restore: remove_unack error, id={}, queue={}, application={}",
+                    expired_item.value(),
+                    queue,
+                    application
+                );
+            }
+        }
     }
 
     pub fn get_unack_queues(&self) -> Vec<String> {
