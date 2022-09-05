@@ -13,9 +13,9 @@ impl QueueUtils {
             .map(|q| String::from_utf8(q.to_vec()).unwrap())
     }
 
-    pub fn get_ready_queues(db: &Db, queue: &str) -> Vec<String> {
+    pub fn get_ready_queues(db: &Db, base_queue_name: &str) -> Vec<String> {
         Self::get_user_queues(db)
-            .filter(|db_queue| QueueNames::is_ready(db_queue, queue))
+            .filter(|db_queue| QueueNames::is_ready(db_queue, base_queue_name))
             .collect()
     }
 
@@ -31,13 +31,17 @@ impl QueueUtils {
             .collect()
     }
 
-    pub fn random_queue_name(db: &Db, queue: &str) -> String {
+    pub fn random_ready_queue_name(db: &Db, queue: &str) -> Option<String> {
         let items = Self::get_ready_queues(db, queue);
+
+        if items.is_empty() {
+            return None;
+        }
 
         let mut rng = thread_rng();
 
         let n = rng.gen_range(0..items.len());
 
-        items[n].clone()
+        Some(items[n].clone())
     }
 }

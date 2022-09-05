@@ -3,7 +3,7 @@ use crate::storage::collections::InMemoryStructures;
 use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
 use chrono::Utc;
-use log::{debug, warn};
+use log::{debug, error, warn};
 use sled::{Db, IVec, Subscriber};
 use std::path::Path;
 use std::sync::Arc;
@@ -24,6 +24,16 @@ impl InnerStorage {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn from_db(db: &Db) -> Self {
+        let storage = db.clone();
+
+        InnerStorage {
+            store: Arc::new(storage.clone()),
+            memory_data: InMemoryStructures::from_db(&storage),
+        }
+    }
+
     pub async fn generate_id(&self, queue: &str) -> IdPair {
         Identity::generate(&self.store, queue).await
     }
@@ -35,8 +45,6 @@ impl InnerStorage {
             .unwrap()
             .insert(&id.vector(), data.to_vec())
             .unwrap();
-
-        debug!("data stored, message_id={}, queue={}", id.value(), queue);
     }
 
     pub fn get_data(&self, id: &IdPair, queue: &str) -> Option<Message> {
@@ -50,7 +58,7 @@ impl InnerStorage {
             return Some(Message::new(id.value(), value));
         }
 
-        debug!("get_data none, message_id={}, queue={}", id.value(), queue);
+        error!("data not found, message_id={}, queue={}", id.value(), queue);
 
         None
     }
@@ -184,6 +192,14 @@ impl InnerStorage {
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
+    pub fn has_unack(&self, id: &IdPair, queue: &str, application: &str) -> bool {
+        let queue_names = QueueNames::new(queue, application);
+
+        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
+
+        unack_queue.contains_key(id.vector()).unwrap()
+    }
+
     pub async fn pop_expired_unacks(&self, queue: &str, application: &str) -> Option<Vec<IdPair>> {
         let now = Utc::now().timestamp_millis();
 
@@ -274,22 +290,25 @@ impl InnerStorage {
     }
 
     pub fn direct_store(&self, queue: &str, id: &IdPair) -> bool {
-        let random_queue_name = QueueUtils::random_queue_name(&self.store, queue);
+        match QueueUtils::random_ready_queue_name(&self.store, queue) {
+            Some(random_queue_name) => {
+                self.store
+                    .open_tree(&random_queue_name)
+                    .unwrap()
+                    .insert(&id.vector(), vec![])
+                    .unwrap();
 
-        self.store
-            .open_tree(&random_queue_name)
-            .unwrap()
-            .insert(&id.vector(), vec![])
-            .unwrap();
+                debug!(
+                    "direct message stored to queue, message_id={}, queue={}, application={}",
+                    id.value(),
+                    queue,
+                    &random_queue_name
+                );
 
-        debug!(
-            "direct message stored to queue, message_id={}, queue={}, application={}",
-            id.value(),
-            queue,
-            &random_queue_name
-        );
-
-        true
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn subscribe_to_receiver(&self, queue: &str, application: &str) -> Subscriber {
@@ -311,5 +330,20 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         message_data_queue.contains_key(id.vector()).unwrap()
+    }
+
+    pub async fn create_application_queue(&self, queue: &str, application: &str) {
+        let queue_names = QueueNames::new(queue, application);
+
+        self.store.open_tree(queue_names.ready()).unwrap();
+    }
+}
+
+impl Clone for InnerStorage {
+    fn clone(&self) -> Self {
+        InnerStorage {
+            store: Arc::clone(&self.store),
+            memory_data: InMemoryStructures::from_db(&Arc::clone(&self.store)),
+        }
     }
 }
