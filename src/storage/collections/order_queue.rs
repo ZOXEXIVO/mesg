@@ -48,13 +48,7 @@ impl UnackOrderData {
     pub async fn add(&self, queue_name: String, message_id: u64, expire_at: i64) {
         self.data
             .entry(queue_name)
-            .or_insert({
-                let data = UnackOrderQueue::new();
-
-                data.add(message_id, expire_at).await;
-
-                data
-            })
+            .or_insert(UnackOrderQueue::new())
             .add(message_id, expire_at)
             .await;
     }

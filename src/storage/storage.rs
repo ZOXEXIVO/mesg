@@ -34,7 +34,7 @@ impl Storage {
         self.inner.store_data(&id, queue, data);
 
         let result = if is_broadcast {
-            // push id to all queue-reciever
+            // push id to all queue-receiver
             let (success, affected_consumers) = self.inner.broadcast_store(queue, &id);
 
             if success {
