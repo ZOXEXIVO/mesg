@@ -10,7 +10,7 @@ hyper = { version = "0.14.20", features = ["full"] }
 toml = "0.5.9"
 lz4 = "1.24.0"
 serde = "1.0.144"
-tonic = "0.8.0"
+tonic = "0.8.1"
 prost = "0.11.0"
 timer = "0.2.0"
 chrono = "0.4.22"
@@ -30,6 +30,7 @@ sled = "0.34.7"
 thread-id = "4.0.0"
 rand = "0.8.5"
 dashmap = "5.4.0"
+#console-subscriber = "0.1.8"
 
 [build-dependencies]
 tonic-build = "0.8.0"

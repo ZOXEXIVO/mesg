@@ -2,9 +2,14 @@ use crate::storage::message::Message;
 use crate::storage::{IdPair, InnerStorage, QueueNames};
 use bytes::Bytes;
 use log::{debug, error, info, warn};
+use sled::transaction::{ConflictableTransactionError, TransactionalTree};
 use sled::Subscriber;
+use sled::Transactional;
 use std::path::Path;
 use thiserror::Error;
+
+#[derive(Debug, PartialEq)]
+struct MyBullshitError;
 
 pub struct Storage {
     inner: InnerStorage,
@@ -30,6 +35,20 @@ impl Storage {
     ) -> Result<bool, StorageError> {
         // generate message id
         let id = self.inner.generate_id(queue).await;
+
+        // let tree1 = self.inner.open_tree(queue);
+        // let tree2 = self.inner.open_tree(queue);
+
+        // (&tree1, &tree2)
+        //     .transaction(|(tx_unprocessed, tx_processed)| -> Result<(), ConflictableTransactionError<MyBullshitError>> {
+        //         let unprocessed_item = tx_unprocessed.remove(b"k3")?.unwrap();
+        //         let mut processed_item = b"yappin' ".to_vec();
+        //         processed_item.extend_from_slice(&unprocessed_item);
+        //         tx_processed.insert(b"k3", processed_item)?;
+        //
+        //         Ok(())
+        //     })
+        //     .unwrap();
 
         self.inner.store_data(&id, queue, data);
 
@@ -69,14 +88,19 @@ impl Storage {
         application: &str,
         invisibility_timeout_ms: i32,
     ) -> Option<Message> {
-        match self.inner.pop(queue, application) {
-            Some(popped_id) => {
+        match self.inner.pop_ready_minimal(queue, application) {
+            Some(minimal_popped_id) => {
                 // store id to unack queue
                 self.inner
-                    .store_unack(&popped_id, queue, application, invisibility_timeout_ms)
+                    .store_unack(
+                        &minimal_popped_id,
+                        queue,
+                        application,
+                        invisibility_timeout_ms,
+                    )
                     .await;
                 // get message data from data queue
-                self.inner.get_data(&popped_id, queue)
+                self.inner.get_data(&minimal_popped_id, queue)
             }
             None => None,
         }
@@ -165,7 +189,7 @@ impl Storage {
             application: &str,
         ) {
             // check for data
-            if !inner.has_data(expired_item, queue) {
+            if !inner.data_exists(expired_item, queue) {
                 debug!(
                     "try_restore: data not found, queue={}, application={}",
                     queue, application
@@ -234,7 +258,7 @@ mod tests {
         // assert
 
         assert!(!result);
-        assert!(!inner_storage.has_data(&IdPair::from_value(0), "queue1"));
+        assert!(!inner_storage.data_exists(&IdPair::from_value(0), "queue1"));
     }
 
     #[tokio::test]
@@ -294,7 +318,7 @@ mod tests {
 
         //act
 
-        let has_data = InnerStorage::from_db(&db).has_data(&IdPair::from_value(0), "queue1");
+        let has_data = InnerStorage::from_db(&db).data_exists(&IdPair::from_value(0), "queue1");
 
         // assert
 
@@ -396,8 +420,8 @@ mod tests {
 
         assert!(message.is_some());
 
-        assert!(inner_storage.has_unack(&IdPair::from_value(0), &queue, &application));
-        assert!(inner_storage.has_data(&IdPair::from_value(0), &queue));
+        assert!(inner_storage.unack_exists(&IdPair::from_value(0), &queue, &application));
+        assert!(inner_storage.data_exists(&IdPair::from_value(0), &queue));
     }
 
     #[tokio::test]
@@ -432,7 +456,7 @@ mod tests {
         // assert
 
         assert!(commit_result);
-        assert!(!inner_storage.has_unack(&IdPair::from_value(message.id), &queue, &application));
+        assert!(!inner_storage.unack_exists(&IdPair::from_value(message.id), &queue, &application));
     }
 
     #[tokio::test]
@@ -467,7 +491,7 @@ mod tests {
         // assert
 
         assert!(commit_result);
-        assert!(!inner_storage.has_data(&IdPair::from_value(message.id), &queue));
+        assert!(!inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
     }
 
     #[tokio::test]
@@ -510,7 +534,7 @@ mod tests {
         // assert
 
         assert!(commit_result);
-        assert!(inner_storage.has_data(&IdPair::from_value(message.id), &queue));
+        assert!(inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
     }
 
     #[tokio::test]
@@ -561,7 +585,7 @@ mod tests {
 
         // assert
 
-        assert!(!inner_storage.has_data(&IdPair::from_value(message1.id), &queue));
+        assert!(!inner_storage.data_exists(&IdPair::from_value(message1.id), &queue));
     }
 
     // revert
@@ -603,7 +627,11 @@ mod tests {
         assert!(commit_result);
         assert!(message2.is_none());
 
-        assert!(!inner_storage.has_unack(&IdPair::from_value(message1.id), &queue, &application));
+        assert!(!inner_storage.unack_exists(
+            &IdPair::from_value(message1.id),
+            &queue,
+            &application
+        ));
 
         // check for ready exists
 

@@ -27,6 +27,9 @@ pub struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    //#[cfg(debug_assertions)]
+    //console_subscriber::init();
+
     color_eyre::install().unwrap();
 
     init_logger();

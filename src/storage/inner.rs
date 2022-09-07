@@ -4,7 +4,7 @@ use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames, QueueUti
 use bytes::Bytes;
 use chrono::Utc;
 use log::{debug, error, warn};
-use sled::{Db, IVec, Subscriber};
+use sled::{Db, IVec, Subscriber, Tree};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -38,6 +38,10 @@ impl InnerStorage {
         Identity::generate(&self.store, queue).await
     }
 
+    pub fn open_tree(&self, queue: &str) -> Tree {
+        self.store.open_tree(queue).unwrap()
+    }
+
     pub fn store_data(&self, id: &IdPair, queue: &str, data: Bytes) {
         // store data
         self.store
@@ -51,9 +55,7 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(message_data)) = message_data_queue.get(&id.vector()) {
-            let val_bytes: Vec<u8> = message_data.to_vec();
-
-            let value = Bytes::from(val_bytes);
+            let value = Bytes::from(message_data.to_vec());
 
             return Some(Message::new(id.value(), value));
         }
@@ -104,41 +106,26 @@ impl InnerStorage {
     pub fn remove_data(&self, queue: &str, id: &IdPair) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
-        if let Ok(Some(_)) = message_data_queue.remove(id.vector()) {
+        // remove shared data
+        if let Ok(None) = message_data_queue.remove(id.vector()) {
             debug!(
-                "remove_data success, message_id={}, queue={}",
+                "remove_data none, message_id={}, queue={}",
                 id.value(),
                 queue
             );
-
-            return true;
+            return false;
         }
-
-        debug!(
-            "remove_data none, message_id={}, queue={}",
-            id.value(),
-            queue
-        );
-
-        false
+        true
     }
 
-    pub fn pop(&self, queue: &str, application: &str) -> Option<IdPair> {
+    pub fn pop_ready_minimal(&self, queue: &str, application: &str) -> Option<IdPair> {
         let queue_names = QueueNames::new(queue, application);
 
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
+        // pop minimal element
         if let Ok(Some((k, _))) = ready_queue.pop_min() {
-            let vector = IdPair::from_vector(k);
-
-            debug!(
-                "pop_min success, message_id={}, queue={}, application={}",
-                vector.value(),
-                queue,
-                application
-            );
-
-            return Some(vector);
+            return Some(IdPair::from_vector(k));
         }
 
         None
@@ -190,14 +177,6 @@ impl InnerStorage {
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
 
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
-    }
-
-    pub fn has_unack(&self, id: &IdPair, queue: &str, application: &str) -> bool {
-        let queue_names = QueueNames::new(queue, application);
-
-        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-
-        unack_queue.contains_key(id.vector()).unwrap()
     }
 
     pub async fn pop_expired_unacks(&self, queue: &str, application: &str) -> Option<Vec<IdPair>> {
@@ -326,7 +305,7 @@ impl InnerStorage {
         QueueUtils::get_unack_queues(&self.store)
     }
 
-    pub fn has_data(&self, id: &IdPair, queue: &str) -> bool {
+    pub fn data_exists(&self, id: &IdPair, queue: &str) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         message_data_queue.contains_key(id.vector()).unwrap()

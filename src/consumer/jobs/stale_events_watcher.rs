@@ -31,17 +31,19 @@ impl StaleEventsWatcher {
                     .await
                 {
                     let id = message.id;
-                    let item = ConsumerDto::from(message);
 
-                    if let Err(err) = data_tx.send(item).await {
-                        if !storage
-                            .revert_inner(id, &config.queue, &config.application)
-                            .await
-                        {
-                            error!(
+                    match data_tx.send(ConsumerDto::from(message)).await {
+                        Ok(()) => continue,
+                        Err(err) => {
+                            if !storage
+                                .revert_inner(id, &config.queue, &config.application)
+                                .await
+                            {
+                                error!(
                                 "revert_inner error consumer_id={}, id={}, queue={}, application={}, err={}",
                                 config.consumer_id, id, &config.queue, &config.application, err
                             );
+                            }
                         }
                     }
                 } else if attempt > 50 {
