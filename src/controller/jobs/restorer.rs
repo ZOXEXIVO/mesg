@@ -1,4 +1,4 @@
-﻿use crate::storage::{QueueNames, Storage};
+﻿use crate::storage::{DebugUtils, QueueNames, Storage};
 use log::info;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -67,12 +67,9 @@ impl ExpiredMessageRestorerJob {
 
             loop {
                 if let Some(restored_unacks) = storage.try_restore(&queue, &application).await {
-                    let ids: Vec<String> =
-                        restored_unacks.iter().map(|ri| ri.to_string()).collect();
-
                     info!(
                         "message restored, ids=[{}] in queue={}, application={}",
-                        ids.join(","),
+                        DebugUtils::render_values(&restored_unacks),
                         queue,
                         application
                     );

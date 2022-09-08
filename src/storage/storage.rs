@@ -1,11 +1,12 @@
 use crate::storage::message::Message;
-use crate::storage::{IdPair, InnerStorage, QueueNames};
+use crate::storage::{DebugUtils, IdPair, InnerStorage, QueueNames};
 use bytes::Bytes;
 use log::{debug, error, info, warn};
 use sled::transaction::{ConflictableTransactionError, TransactionalTree};
 use sled::Subscriber;
 use sled::Transactional;
 use std::path::Path;
+use structopt::clap::App;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq)]
@@ -35,20 +36,6 @@ impl Storage {
     ) -> Result<bool, StorageError> {
         // generate message id
         let id = self.inner.generate_id(queue).await;
-
-        // let tree1 = self.inner.open_tree(queue);
-        // let tree2 = self.inner.open_tree(queue);
-
-        // (&tree1, &tree2)
-        //     .transaction(|(tx_unprocessed, tx_processed)| -> Result<(), ConflictableTransactionError<MyBullshitError>> {
-        //         let unprocessed_item = tx_unprocessed.remove(b"k3")?.unwrap();
-        //         let mut processed_item = b"yappin' ".to_vec();
-        //         processed_item.extend_from_slice(&unprocessed_item);
-        //         tx_processed.insert(b"k3", processed_item)?;
-        //
-        //         Ok(())
-        //     })
-        //     .unwrap();
 
         self.inner.store_data(&id, queue, data);
 
@@ -138,13 +125,18 @@ impl Storage {
         }
 
         if let Some(data_usage) = self.inner.decrement_data_usage(queue, &id_pair) {
-            if data_usage == 0 && !self.inner.remove_data(queue, &id_pair) {
-                warn!(
-                    "commit_inner: remove_data error, id={}, queue={}",
-                    id, queue
-                );
-
-                return false;
+            if data_usage == 0 {
+                if self.inner.remove_data(queue, &id_pair) {
+                    debug!(
+                        "commit_inner: data removed (usage=0), id={}, queue={}",
+                        id, queue
+                    );
+                } else {
+                    warn!(
+                        "commit_inner: remove_data error, id={}, queue={}",
+                        id, queue
+                    );
+                }
             }
         }
 
@@ -157,8 +149,8 @@ impl Storage {
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
             warn!(
-                "revert_inner remove_unack error: not found id in unack queue, id={}, queue={}",
-                id, queue
+                "revert_inner remove_unack error: not found id in unack queue, id={}, queue={}, application={}",
+                id, queue, application
             );
 
             return false;
@@ -166,18 +158,33 @@ impl Storage {
 
         self.inner.store_ready(&id_pair, queue, application);
 
+        debug!(
+            "revert_inner: ready item stored, id={}, queue={}, application={}",
+            id, queue, application
+        );
+
         true
     }
 
     pub async fn try_restore(&self, queue: &str, application: &str) -> Option<Vec<u64>> {
         if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
+            info!(
+                "finded expired items, ids=[{}] in queue={}, application={}",
+                DebugUtils::render_pair_values(&expired_unacks),
+                queue,
+                application
+            );
+
+            let mut resored_items = Vec::with_capacity(expired_unacks.len());
+
             // process expired items
             for expired_item in &expired_unacks {
-                process_expired_item(&self.inner, expired_item, queue, application);
+                if process_expired_item(&self.inner, expired_item, queue, application) {
+                    resored_items.push(expired_item.value());
+                }
             }
 
-            let result: Vec<u64> = expired_unacks.into_iter().map(|e| e.value()).collect();
-            return Some(result);
+            return Some(resored_items);
         }
 
         return None;
@@ -187,34 +194,42 @@ impl Storage {
             expired_item: &IdPair,
             queue: &str,
             application: &str,
-        ) {
+        ) -> bool {
             // check for data
             if !inner.data_exists(expired_item, queue) {
                 debug!(
-                    "try_restore: data not found, queue={}, application={}",
-                    queue, application
-                );
-            }
-
-            // remove unack
-            if inner.remove_unack(expired_item, queue, application) {
-                debug!(
-                    "try_restore: remove_unack success, id={}, queue={}, application={}",
+                    "try_restore: data not found, id={}, queue={}, application={}",
                     expired_item.value(),
                     queue,
                     application
                 );
 
-                // add id to ready
-                inner.store_ready(expired_item, queue, application);
-            } else {
+                return false;
+            }
+
+            // remove unack
+            if !inner.remove_unack(expired_item, queue, application) {
                 debug!(
                     "try_restore: remove_unack error, id={}, queue={}, application={}",
                     expired_item.value(),
                     queue,
                     application
                 );
+
+                return false;
             }
+
+            debug!(
+                "try_restore: remove_unack success, id={}, queue={}, application={}",
+                expired_item.value(),
+                queue,
+                application
+            );
+
+            // add id to ready
+            inner.store_ready(expired_item, queue, application);
+
+            true
         }
     }
 

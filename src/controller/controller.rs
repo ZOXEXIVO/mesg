@@ -1,9 +1,8 @@
-use crate::consumer::{ConsumerCollection, ConsumerDto, RawConsumer};
+use crate::consumer::{ConsumerCollection, RawConsumer};
 use crate::controller::jobs::BackgroundJobs;
 use crate::storage::Storage;
 use bytes::Bytes;
 use std::sync::Arc;
-use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 pub struct MesgController {
     storage: Arc<Storage>,

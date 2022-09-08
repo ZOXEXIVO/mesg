@@ -2,8 +2,8 @@
 use dashmap::DashMap;
 use log::info;
 use sled::{Db, Tree};
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
 use tokio::sync::Mutex;
 
 pub struct UnackOrderData {
@@ -62,8 +62,6 @@ impl UnackOrderData {
     }
 }
 
-type MinHeap<T> = BinaryHeap<Reverse<T>>;
-
 pub struct UnackOrderQueue {
     data: Mutex<UnackOrderQueueInner>,
 }
@@ -105,46 +103,86 @@ impl UnackOrderQueue {
 }
 
 pub struct UnackOrderQueueInner {
-    min_heap: MinHeap<i64>,
-    expiration_group: HashMap<i64, Vec<u64>>,
+    min_heap: BinaryHeap<OrderQueueItem>,
 }
 
 impl UnackOrderQueueInner {
     pub fn with_capacity(capacity: usize) -> Self {
         UnackOrderQueueInner {
-            min_heap: MinHeap::with_capacity(capacity),
-            expiration_group: HashMap::new(),
+            min_heap: BinaryHeap::with_capacity(capacity),
         }
     }
 
     pub fn add(&mut self, message_id: u64, expire_at: i64) {
         // push to heap
-        self.min_heap.push(Reverse(expire_at));
-
-        // push to hashmap
-        self.expiration_group
-            .entry(expire_at)
-            .or_insert(Vec::new())
-            .push(message_id);
+        self.min_heap.push(OrderQueueItem {
+            id: message_id,
+            expired_at: Reverse(expire_at),
+        });
     }
 
     pub fn get_expired(&mut self, now: i64) -> Option<Vec<u64>> {
-        let mut min_element = -1;
-
         let min_element_expired = match self.min_heap.peek() {
-            Some(Reverse(min_val)) => {
-                min_element = *min_val;
-                now >= *min_val
-            }
+            Some(min_val) => now >= min_val.expired_at.0,
             None => false,
         };
 
         if min_element_expired {
-            let _ = self.min_heap.pop();
-
-            return self.expiration_group.remove(&min_element);
+            let element = self.min_heap.pop().unwrap();
+            return Some(vec![element.id]);
         }
 
         None
+    }
+}
+
+pub struct OrderQueueItem {
+    pub id: u64,
+    pub expired_at: Reverse<i64>,
+}
+
+impl Eq for OrderQueueItem {}
+
+impl PartialEq<Self> for OrderQueueItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.expired_at.eq(&other.expired_at)
+    }
+}
+
+impl PartialOrd<Self> for OrderQueueItem {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.expired_at.partial_cmp(&other.expired_at)
+    }
+}
+
+impl Ord for OrderQueueItem {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.expired_at.cmp(&other.expired_at)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::collections::order_queue::UnackOrderQueueInner;
+
+    #[test]
+    fn get_expired_once_is_correct() {
+        let mut queue = UnackOrderQueueInner::with_capacity(1);
+
+        queue.add(5, 5);
+        queue.add(4, 4);
+        queue.add(3, 3);
+        queue.add(2, 2);
+        queue.add(1, 1);
+
+        assert!(queue.get_expired(0).is_none());
+
+        assert_eq!(1u64, queue.get_expired(10).unwrap()[0]);
+        assert_eq!(2u64, queue.get_expired(10).unwrap()[0]);
+        assert_eq!(3u64, queue.get_expired(10).unwrap()[0]);
+        assert_eq!(4u64, queue.get_expired(10).unwrap()[0]);
+        assert_eq!(5u64, queue.get_expired(10).unwrap()[0]);
+
+        assert!(queue.get_expired(10).is_none());
     }
 }

@@ -1,4 +1,3 @@
-use crate::storage::collections::order_queue::UnackOrderQueue;
 use crate::storage::collections::InMemoryStructures;
 use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
@@ -164,7 +163,7 @@ impl InnerStorage {
         unack_order.insert(&id.vector(), expire_vector).unwrap();
 
         debug!(
-            "message stored to unack, unack_order queue, message_id={}, queue={}, application={}",
+            "message stored to unack, message_id={}, queue={}, application={}",
             id.value(),
             queue,
             application
@@ -309,6 +308,14 @@ impl InnerStorage {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         message_data_queue.contains_key(id.vector()).unwrap()
+    }
+
+    pub fn unack_exists(&self, id: &IdPair, queue: &str, application: &str) -> bool {
+        let queue_names = QueueNames::new(queue, application);
+
+        let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
+
+        unack_queue.contains_key(id.vector()).unwrap()
     }
 
     pub async fn create_application_queue(&self, queue: &str, application: &str) {
