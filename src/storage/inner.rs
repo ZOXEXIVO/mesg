@@ -183,16 +183,8 @@ impl InnerStorage {
 
         let queue_names = QueueNames::new(queue, application);
 
-        let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
-
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
-        let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
-
-        // Debug
-        #[cfg(debug_assertions)]
-        DebugUtils::print_keys_tree(&ready_queue, &format!("ready: {} {}", queue, application));
-        #[cfg(debug_assertions)]
-        DebugUtils::print_keys_tree(&unack_queue, &format!("unack: {} {}", queue, application));
+        let unack_order_queue = self.store.open_tree(queue_names.unack_order()).unwrap();
 
         // store expiration data to in_memory queue
         let expired_data = self
@@ -202,21 +194,20 @@ impl InnerStorage {
             .await;
 
         if let Some(expired_items) = expired_data {
-            for expired_id in &expired_items {
-                let id_vec = IdPair::convert_u64_to_vec(*expired_id);
+            let mut result = Vec::new();
 
-                if unack_order_queue.remove(&id_vec).is_err() {
-                    warn!(
-                        "unack remove error: not found id={}, queue={}, application={}",
-                        *expired_id, queue, application
-                    )
+            for expired_id in &expired_items {
+                if let Ok(Some(_)) =
+                    unack_order_queue.remove(IdPair::convert_u64_to_vec(*expired_id))
+                {
+                    let id = IdPair::from_value(*expired_id);
+
+                    if unack_queue.contains_key(id.vector()).unwrap() {
+                        // if we succesfully drop item, use it value
+                        result.push(id);
+                    }
                 }
             }
-
-            let result: Vec<IdPair> = expired_items
-                .iter()
-                .map(|e| IdPair::from_value(*e))
-                .collect();
 
             Some(result)
         } else {

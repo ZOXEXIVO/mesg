@@ -67,12 +67,14 @@ impl ExpiredMessageRestorerJob {
 
             loop {
                 if let Some(restored_unacks) = storage.try_restore(&queue, &application).await {
-                    info!(
-                        "message restored, ids=[{}] in queue={}, application={}",
-                        DebugUtils::render_values(&restored_unacks),
-                        queue,
-                        application
-                    );
+                    if !restored_unacks.is_empty() {
+                        info!(
+                            "message restored, ids=[{}] in queue={}, application={}",
+                            DebugUtils::render_values(&restored_unacks),
+                            queue,
+                            application
+                        );
+                    }
                 } else {
                     attempt += 1;
 

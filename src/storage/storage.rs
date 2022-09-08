@@ -1,12 +1,9 @@
 use crate::storage::message::Message;
-use crate::storage::{DebugUtils, IdPair, InnerStorage, QueueNames};
+use crate::storage::{DebugUtils, IdPair, InnerStorage};
 use bytes::Bytes;
-use log::{debug, error, info, warn};
-use sled::transaction::{ConflictableTransactionError, TransactionalTree};
+use log::{debug, info, warn};
 use sled::Subscriber;
-use sled::Transactional;
 use std::path::Path;
-use structopt::clap::App;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq)]
@@ -127,13 +124,10 @@ impl Storage {
         if let Some(data_usage) = self.inner.decrement_data_usage(queue, &id_pair) {
             if data_usage == 0 {
                 if self.inner.remove_data(queue, &id_pair) {
-                    debug!(
-                        "commit_inner: data removed (usage=0), id={}, queue={}",
-                        id, queue
-                    );
+                    debug!("commit_inner: data[id={}] removed, queue={}", id, queue);
                 } else {
                     warn!(
-                        "commit_inner: remove_data error, id={}, queue={}",
+                        "commit_inner: remove_data[id={}] error, queue={}",
                         id, queue
                     );
                 }
@@ -168,23 +162,25 @@ impl Storage {
 
     pub async fn try_restore(&self, queue: &str, application: &str) -> Option<Vec<u64>> {
         if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
-            info!(
-                "finded expired items, ids=[{}] in queue={}, application={}",
-                DebugUtils::render_pair_values(&expired_unacks),
-                queue,
-                application
-            );
+            if !expired_unacks.is_empty() {
+                info!(
+                    "finded expired items, ids=[{}] in queue={}, application={}",
+                    DebugUtils::render_pair_values(&expired_unacks),
+                    queue,
+                    application
+                );
 
-            let mut resored_items = Vec::with_capacity(expired_unacks.len());
+                let mut resored_items = Vec::with_capacity(expired_unacks.len());
 
-            // process expired items
-            for expired_item in &expired_unacks {
-                if process_expired_item(&self.inner, expired_item, queue, application) {
-                    resored_items.push(expired_item.value());
+                // process expired items
+                for expired_item in &expired_unacks {
+                    if process_expired_item(&self.inner, expired_item, queue, application) {
+                        resored_items.push(expired_item.value());
+                    }
                 }
-            }
 
-            return Some(resored_items);
+                return Some(resored_items);
+            }
         }
 
         return None;
@@ -198,7 +194,7 @@ impl Storage {
             // check for data
             if !inner.data_exists(expired_item, queue) {
                 debug!(
-                    "try_restore: data not found, id={}, queue={}, application={}",
+                    "try_restore: data[id={}] not found, queue={}, application={}",
                     expired_item.value(),
                     queue,
                     application
