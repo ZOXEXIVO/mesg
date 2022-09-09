@@ -164,7 +164,7 @@ impl Storage {
         if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
             if !expired_unacks.is_empty() {
                 info!(
-                    "finded expired items, ids=[{}] in queue={}, application={}",
+                    "expired items, ids=[{}] in queue={}, application={}",
                     DebugUtils::render_pair_values(&expired_unacks),
                     queue,
                     application

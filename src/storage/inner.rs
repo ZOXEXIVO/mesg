@@ -1,8 +1,8 @@
 use crate::storage::collections::InMemoryStructures;
-use crate::storage::{DebugUtils, IdPair, Identity, Message, QueueNames, QueueUtils};
+use crate::storage::{IdPair, Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
 use chrono::Utc;
-use log::{debug, error, warn};
+use log::{debug, error};
 use sled::{Db, IVec, Subscriber, Tree};
 use std::path::Path;
 use std::sync::Arc;
@@ -59,7 +59,7 @@ impl InnerStorage {
             return Some(Message::new(id.value(), value));
         }
 
-        error!("data not found, message_id={}, queue={}", id.value(), queue);
+        error!("data [id={}] not found, queue={}", id.value(), queue);
 
         None
     }
@@ -107,11 +107,7 @@ impl InnerStorage {
 
         // remove shared data
         if let Ok(None) = message_data_queue.remove(id.vector()) {
-            debug!(
-                "remove_data none, message_id={}, queue={}",
-                id.value(),
-                queue
-            );
+            debug!("remove data [id={}] none, queue={}", id.value(), queue);
             return false;
         }
         true
@@ -163,7 +159,7 @@ impl InnerStorage {
         unack_order.insert(&id.vector(), expire_vector).unwrap();
 
         debug!(
-            "message stored to unack, message_id={}, queue={}, application={}",
+            "stored id={} to unack, queue={}, application={}",
             id.value(),
             queue,
             application
@@ -225,7 +221,7 @@ impl InnerStorage {
             .unwrap();
 
         debug!(
-            "message stored to ready queue, message_id={}, queue={}, application={}",
+            "stored [id={}] to ready queue, queue={}, application={}",
             id.value(),
             queue,
             application
@@ -246,7 +242,7 @@ impl InnerStorage {
                 .unwrap();
 
             debug!(
-                "broadcast message stored to queue, message_id={}, queue={}, application={}",
+                "broadcast stored [id={}] to queue, queue={}, application={}",
                 id.value(),
                 queue,
                 &ready_queue
@@ -268,7 +264,7 @@ impl InnerStorage {
                     .unwrap();
 
                 debug!(
-                    "direct message stored to queue, message_id={}, queue={}, application={}",
+                    "direct stored [id={}] to queue, queue={}, application={}",
                     id.value(),
                     queue,
                     &random_queue_name
@@ -301,6 +297,7 @@ impl InnerStorage {
         message_data_queue.contains_key(id.vector()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn unack_exists(&self, id: &IdPair, queue: &str, application: &str) -> bool {
         let queue_names = QueueNames::new(queue, application);
 
