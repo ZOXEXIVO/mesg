@@ -46,7 +46,7 @@ impl StaleEventsWatcher {
                             }
                         }
                     }
-                } else if attempt > 50 {
+                } else if attempt > 5 {
                     attempt = 0;
 
                     debug!(
@@ -57,7 +57,7 @@ impl StaleEventsWatcher {
                     notified_task.await;
 
                     debug!(
-                        "task notified, queue={}, application={}",
+                        "consumer notified, queue={}, application={}",
                         &config.queue, &config.application
                     );
                 } else {
