@@ -53,7 +53,7 @@ impl ConsumerCollection {
         consumers.push(consumer);
 
         info!(
-            "consumer created, consumer_id={}, queue={}, application={}",
+            "consumer[id={}] created, queue={}, application={}",
             consumer_id, queue, application
         );
 

@@ -1,8 +1,8 @@
+use crate::consumer::Consumer;
+use log::{info, warn};
 use std::sync::Arc;
-use log::info;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::RwLock;
-use crate::consumer::Consumer;
 
 pub struct ConsumersShutdownWaiter;
 
@@ -22,10 +22,13 @@ impl ConsumersShutdownWaiter {
 
                         consumer.shutdown().await;
 
-                        info!("consumer_id={} removed", consumer_id_to_remove)
+                        info!("consumer[id={}] removed", consumer_id_to_remove)
                     }
                     None => {
-                        info!("cannot remove consumer_id={}", consumer_id_to_remove)
+                        warn!(
+                            "consumer[id={}] removing error: not found",
+                            consumer_id_to_remove
+                        )
                     }
                 }
             }
