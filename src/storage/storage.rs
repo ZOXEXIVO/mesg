@@ -143,7 +143,7 @@ impl Storage {
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
             warn!(
-                "revert_inner remove_unack error: not found id in unack queue, id={}, queue={}, application={}",
+                "revert_inner remove_unack [id={}] error: not found in unack queue, queue={}, application={}",
                 id, queue, application
             );
 
@@ -153,7 +153,7 @@ impl Storage {
         self.inner.store_ready(&id_pair, queue, application);
 
         debug!(
-            "revert_inner: ready item stored, id={}, queue={}, application={}",
+            "revert_inner: ready item [id={}] stored, queue={}, application={}",
             id, queue, application
         );
 
@@ -206,7 +206,7 @@ impl Storage {
             // remove unack
             if !inner.remove_unack(expired_item, queue, application) {
                 debug!(
-                    "try_restore: remove_unack error, id={}, queue={}, application={}",
+                    "try_restore: remove_unack[id={}] error, queue={}, application={}",
                     expired_item.value(),
                     queue,
                     application
@@ -216,7 +216,7 @@ impl Storage {
             }
 
             debug!(
-                "try_restore: remove_unack success, id={}, queue={}, application={}",
+                "try_restore: remove_unack[id={}] success, queue={}, application={}",
                 expired_item.value(),
                 queue,
                 application
