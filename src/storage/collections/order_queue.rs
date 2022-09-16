@@ -36,9 +36,10 @@ impl UnackOrderData {
             for tree_item in tree.into_iter() {
                 let (k, v) = tree_item.unwrap();
 
-                let id = IdPair::from_vector(k);
+                let key = IdPair::from_vector(k).into();
+                let value = IdPair::from_vector(v).into();
 
-                queue_data.push((id.value(), IdPair::convert_vec_to_i64(v)));
+                queue_data.push((key, value));
             }
 
             queue_data

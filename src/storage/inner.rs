@@ -37,10 +37,6 @@ impl InnerStorage {
         Identity::generate(&self.store, queue).await
     }
 
-    pub fn open_tree(&self, queue: &str) -> Tree {
-        self.store.open_tree(queue).unwrap()
-    }
-
     pub fn store_data(&self, id: &IdPair, queue: &str, data: Bytes) {
         // store data
         self.store
@@ -70,7 +66,7 @@ impl InnerStorage {
         self.store
             .open_tree(data_usage_key)
             .unwrap()
-            .insert(id.vector(), IdPair::convert_u32_to_vec(usages_count))
+            .insert(id.vector(), IdPair::from(usages_count))
             .unwrap();
     }
 
@@ -154,9 +150,11 @@ impl InnerStorage {
         // store { message_id, expire_time } to unack_order queue
         let unack_order = self.store.open_tree(queue_names.unack_order()).unwrap();
 
-        let expire_vector = IdPair::convert_i64_to_vec(expire_time_millis);
+        let expire_vector = IdPair::from(expire_time_millis);
 
-        unack_order.insert(&id.vector(), expire_vector).unwrap();
+        unack_order
+            .insert(&id.vector(), expire_vector.vector())
+            .unwrap();
 
         debug!(
             "stored id={} to unack, queue={}, application={}",
@@ -193,9 +191,7 @@ impl InnerStorage {
             let mut result = Vec::new();
 
             for expired_id in &expired_items {
-                if let Ok(Some(_)) =
-                    unack_order_queue.remove(IdPair::convert_u64_to_vec(*expired_id))
-                {
+                if let Ok(Some(_)) = unack_order_queue.remove(IdPair::from(*expired_id).vector()) {
                     let id = IdPair::from_value(*expired_id);
 
                     if unack_queue.contains_key(id.vector()).unwrap() {

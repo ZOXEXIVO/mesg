@@ -1,4 +1,4 @@
-use crate::consumer::{ConsumerConfig, ConsumerDto};
+use crate::consumer::{ConsumerConfig, ConsumerDto, ConsumerStatistics};
 use crate::storage::Storage;
 use log::{debug, error};
 use std::sync::Arc;
@@ -30,6 +30,8 @@ impl StaleEventsWatcher {
                     )
                     .await
                 {
+                    ConsumerStatistics::consumed(config.consumer_id);
+
                     let id = message.id;
 
                     match data_tx.send(ConsumerDto::from(message)).await {

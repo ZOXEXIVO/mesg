@@ -215,13 +215,6 @@ impl Storage {
                 return false;
             }
 
-            debug!(
-                "try_restore: remove_unack[id={}] success, queue={}, application={}",
-                expired_item.value(),
-                queue,
-                application
-            );
-
             // add id to ready
             inner.store_ready(expired_item, queue, application);
 

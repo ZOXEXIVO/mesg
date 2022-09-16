@@ -43,23 +43,60 @@ impl IdPair {
             value: None,
         }
     }
+}
 
-    #[inline]
-    pub fn convert_i64_to_vec(value: i64) -> IVec {
-        IVec::from(value.to_be_bytes().to_vec())
-    }
-    #[inline]
-    pub fn convert_vec_to_i64(vec: IVec) -> i64 {
-        i64::from_be_bytes(vec.to_vec().try_into().unwrap())
-    }
+// Converters
 
-    #[inline]
-    pub fn convert_u64_to_vec(value: u64) -> IVec {
-        IVec::from(value.to_be_bytes().to_vec())
+impl From<IdPair> for IVec {
+    fn from(value: IdPair) -> Self {
+        value.vector()
     }
+}
 
-    #[inline]
-    pub fn convert_u32_to_vec(value: u32) -> IVec {
-        IVec::from(value.to_be_bytes().to_vec())
+impl From<&IdPair> for IVec {
+    fn from(value: &IdPair) -> Self {
+        value.vector()
+    }
+}
+
+impl From<&IdPair> for i64 {
+    fn from(id: &IdPair) -> Self {
+        id.value() as i64
+    }
+}
+
+impl From<IdPair> for i64 {
+    fn from(value: IdPair) -> Self {
+        value.value() as i64
+    }
+}
+
+impl From<&IdPair> for u64 {
+    fn from(id: &IdPair) -> Self {
+        id.value()
+    }
+}
+
+impl From<IdPair> for u64 {
+    fn from(value: IdPair) -> Self {
+        value.value()
+    }
+}
+
+impl From<i64> for IdPair {
+    fn from(value: i64) -> Self {
+        IdPair::from_vector(IVec::from(value.to_be_bytes().to_vec()))
+    }
+}
+
+impl From<u64> for IdPair {
+    fn from(value: u64) -> Self {
+        IdPair::from_vector(IVec::from(value.to_be_bytes().to_vec()))
+    }
+}
+
+impl From<u32> for IdPair {
+    fn from(value: u32) -> Self {
+        IdPair::from_vector(IVec::from(value.to_be_bytes().to_vec()))
     }
 }

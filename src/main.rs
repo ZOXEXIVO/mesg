@@ -53,6 +53,7 @@ fn init_logger() {
 
     let builder = builder
         .filter(Some("h2"), LevelFilter::Off)
+        .filter(Some("hyper"), LevelFilter::Off)
         .filter(Some("sled"), LevelFilter::Off);
 
     builder.init();
