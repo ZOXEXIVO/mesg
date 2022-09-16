@@ -1,5 +1,6 @@
 use crate::consumer::{ConsumerConfig, ConsumerDto, ConsumerJobsCollection};
 use crate::storage::Storage;
+use log::debug;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -27,6 +28,8 @@ impl Consumer {
     }
 
     pub async fn shutdown(&self) {
+        debug!("shutting down consumer[id={}] jobs", self.id);
+
         self.jobs.shutdown();
     }
 }

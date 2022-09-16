@@ -1,6 +1,6 @@
 use crate::consumer::{ConsumerConfig, ConsumerDto, ConsumerStatistics};
 use crate::storage::Storage;
-use log::{debug, error};
+use log::{debug, error, warn};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -37,15 +37,26 @@ impl StaleEventsWatcher {
                     match data_tx.send(ConsumerDto::from(message)).await {
                         Ok(()) => continue,
                         Err(err) => {
+                            warn!(
+                                "consumer[id={}] send data[id={}] error, queue={}, application={}, err={}",
+                                config.consumer_id, id, &config.queue, &config.application, err
+                            );
+
                             if !storage
                                 .revert_inner(id, &config.queue, &config.application)
                                 .await
                             {
                                 error!(
                                 "revert_inner error consumer_id={}, id={}, queue={}, application={}, err={}",
-                                config.consumer_id, id, &config.queue, &config.application, err
-                            );
+                                config.consumer_id, id, &config.queue, &config.application, err);
                             }
+
+                            warn!(
+                                "consumer[id={}] stale_events_watcher exited",
+                                config.consumer_id
+                            );
+
+                            break;
                         }
                     }
                 } else if attempt > 5 {
@@ -65,7 +76,7 @@ impl StaleEventsWatcher {
                 } else {
                     attempt += 1;
 
-                    let sleep_time_ms = 100 * attempt;
+                    let sleep_time_ms = 200 * attempt;
 
                     tokio::time::sleep(Duration::from_millis(sleep_time_ms as u64)).await;
                 }
