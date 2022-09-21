@@ -102,6 +102,11 @@ impl Storage {
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
+        debug!(
+            "commit id={}, queue={}, application={}, success={}",
+            id, queue, application, success
+        );
+
         match success {
             true => self.commit_inner(id, queue, application).await,
             false => self.revert_inner(id, queue, application).await,
@@ -122,6 +127,11 @@ impl Storage {
         }
 
         if let Some(data_usage) = self.inner.decrement_data_usage(queue, &id_pair) {
+            debug!(
+                "commit_inner: data usage [id={}] = {}, queue={}",
+                id, data_usage, queue
+            );
+
             if data_usage == 0 {
                 if self.inner.remove_data(queue, &id_pair) {
                     debug!("commit_inner: data[id={}] removed, queue={}", id, queue);
@@ -495,6 +505,65 @@ mod tests {
         // assert
 
         assert!(commit_result);
+        assert!(!inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
+    }
+
+    #[tokio::test]
+    async fn commit_success_multiple_data_copy_removed() {
+        let db = Config::new()
+            .temporary(true)
+            .flush_every_ms(None)
+            .open()
+            .unwrap();
+
+        let inner_storage = InnerStorage::from_db(&db);
+
+        let queue = String::from("queue1");
+
+        let application = String::from("app1");
+        let application2 = String::from("app2");
+        let application3 = String::from("app3");
+
+        inner_storage
+            .create_application_queue(&queue, &application)
+            .await;
+
+        inner_storage
+            .create_application_queue(&queue, &application2)
+            .await;
+
+        inner_storage
+            .create_application_queue(&queue, &application3)
+            .await;
+
+        let storage = Storage::from_inner(inner_storage.clone());
+
+        let data = Bytes::from(vec![1, 2, 3]);
+
+        storage.push(&queue, data, true).await.unwrap();
+
+        // act
+        let message = storage.pop(&queue, &application, 1000).await.unwrap();
+        let commit_result = storage.commit(message.id, &queue, &application, true).await;
+
+        let message2 = storage.pop(&queue, &application2, 1000).await.unwrap();
+        let commit_result2 = storage
+            .commit(message2.id, &queue, &application2, true)
+            .await;
+
+        // sorry
+        assert!(inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
+
+        let message3 = storage.pop(&queue, &application3, 1000).await.unwrap();
+        let commit_result3 = storage
+            .commit(message3.id, &queue, &application3, true)
+            .await;
+
+        // assert
+        assert!(commit_result);
+        assert!(commit_result2);
+        assert!(commit_result3);
+
         assert!(!inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
     }
 
