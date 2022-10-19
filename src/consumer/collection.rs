@@ -19,7 +19,7 @@ impl ConsumerCollection {
         let consumers = ConsumerCollection {
             id_generator: AtomicU32::new(0),
             consumers: Arc::new(RwLock::new(Vec::new())),
-            shutdown_tx,
+            shutdown_tx
         };
 
         // Run shutdown waiter

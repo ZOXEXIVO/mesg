@@ -180,16 +180,16 @@ impl Storage {
                     application
                 );
 
-                let mut resored_items = Vec::with_capacity(expired_unacks.len());
+                let mut restored_items = Vec::with_capacity(expired_unacks.len());
 
                 // process expired items
                 for expired_item in &expired_unacks {
                     if process_expired_item(&self.inner, expired_item, queue, application) {
-                        resored_items.push(expired_item.value());
+                        restored_items.push(expired_item.value());
                     }
                 }
 
-                return Some(resored_items);
+                return Some(restored_items);
             }
         }
 
