@@ -1,51 +1,49 @@
 /// Push
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag="3")]
+    #[prost(bool, tag = "3")]
     pub is_broadcast: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
-    #[prost(bool, tag="1")]
+    #[prost(bool, tag = "1")]
     pub success: bool,
 }
 /// Pull
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub application: ::prost::alloc::string::String,
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag = "3")]
     pub invisibility_timeout_ms: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub id: u64,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
-// Commit 
-
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub id: u64,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub queue: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
+    #[prost(string, tag = "3")]
     pub application: ::prost::alloc::string::String,
-    #[prost(bool, tag="4")]
+    #[prost(bool, tag = "4")]
     pub success: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {
-    #[prost(bool, tag="1")]
+    #[prost(bool, tag = "1")]
     pub success: bool,
 }
 /// Generated server implementations.

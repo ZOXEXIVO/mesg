@@ -6,12 +6,12 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.21.2", features = ["full"] }
-hyper = { version = "0.14.20", features = ["full"] }
+hyper = { version = "0.14.22", features = ["full"] }
 toml = "0.5.9"
 lz4 = "1.24.0"
-serde = "1.0.145"
+serde = "1.0.147"
 tonic = "0.8.2"
-prost = "0.11.0"
+prost = "0.11.2"
 timer = "0.2.0"
 chrono = "0.4.22"
 log = { version = "0.4.17", features = ["release_max_level_info"] }
@@ -19,11 +19,10 @@ env_logger = "0.9.1"
 bytes = "1.2.1"
 oneshot = "0.1.5"
 chashmap = "2.2.2"
-futures = "0.3.24"
+futures = "0.3.25"
 async-trait = "0.1.58"
 color-eyre = "0.6.2"
-thiserror = "1.0.37"
-anyhow = "1.0.65"
+anyhow = "1.0.66"
 structopt = "0.3.26"
 lazy_static = "1.4.0"
 sled = "0.34.7"
@@ -35,4 +34,4 @@ log4rs = "1.2.0"
 
 [build-dependencies]
 tonic-build = "0.8.2"
-prost-build = "0.11.1"
+prost-build = "0.11.2"

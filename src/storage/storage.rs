@@ -4,7 +4,6 @@ use bytes::Bytes;
 use log::{debug, info, warn};
 use sled::Subscriber;
 use std::path::Path;
-use thiserror::Error;
 
 #[derive(Debug, PartialEq)]
 struct MyBullshitError;
@@ -243,7 +242,7 @@ impl Storage {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum StorageError {}
 
 #[cfg(test)]
