@@ -27,7 +27,7 @@ steps:
       - docker stop mesg-testing || true
       - docker rm mesg-testing || true
       - docker run -d -p 172.17.0.1:37000:35000 --name mesg-testing mesg:1.0.0.$$DRONE_BUILD_NUMBER
-      - docker build -t mesg-testing:1.0.0.$$DRONE_BUILD_NUMBER --name mesg-testing -f "build/Mesg.Testing.Dockerfile" .
+      - docker build -t mesg-testing:1.0.0.$$DRONE_BUILD_NUMBER -f "build/Mesg.Testing.Dockerfile" .
       - docker stop mesg-testing || true
       - docker rm mesg-testing || true
     environment:
