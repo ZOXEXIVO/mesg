@@ -47,7 +47,7 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 fn init_logger() {
-    let env = Env::default().default_filter_or("debug");
+    let env = Env::default().default_filter_or("info");
 
     let mut builder = env_logger::Builder::from_env(env);
 
