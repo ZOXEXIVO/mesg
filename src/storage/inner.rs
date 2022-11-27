@@ -232,7 +232,7 @@ impl InnerStorage {
 
         for ready_queue in &ready_queues {
             self.store
-                .open_tree(&ready_queue)
+                .open_tree(ready_queue)
                 .unwrap()
                 .insert(id.vector(), vec![])
                 .unwrap();
