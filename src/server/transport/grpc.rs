@@ -1,4 +1,5 @@
 /// Push
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushRequest {
     #[prost(string, tag = "1")]
@@ -8,12 +9,14 @@ pub struct PushRequest {
     #[prost(bool, tag = "3")]
     pub is_broadcast: bool,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PushResponse {
     #[prost(bool, tag = "1")]
     pub success: bool,
 }
 /// Pull
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullRequest {
     #[prost(string, tag = "1")]
@@ -23,6 +26,7 @@ pub struct PullRequest {
     #[prost(int32, tag = "3")]
     pub invisibility_timeout_ms: i32,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullResponse {
     #[prost(uint64, tag = "1")]
@@ -30,6 +34,7 @@ pub struct PullResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitRequest {
     #[prost(uint64, tag = "1")]
@@ -41,6 +46,7 @@ pub struct CommitRequest {
     #[prost(bool, tag = "4")]
     pub success: bool,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommitResponse {
     #[prost(bool, tag = "1")]
@@ -50,14 +56,14 @@ pub struct CommitResponse {
 pub mod mesg_protocol_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    ///Generated trait containing gRPC methods that should be implemented for use with MesgProtocolServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with MesgProtocolServer.
     #[async_trait]
     pub trait MesgProtocol: Send + Sync + 'static {
         async fn push(
             &self,
             request: tonic::Request<super::PushRequest>,
         ) -> Result<tonic::Response<super::PushResponse>, tonic::Status>;
-        ///Server streaming response type for the Pull method.
+        /// Server streaming response type for the Pull method.
         type PullStream: futures_core::Stream<
                 Item = Result<super::PullResponse, tonic::Status>,
             >
