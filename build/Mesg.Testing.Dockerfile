@@ -1,4 +1,4 @@
-FROM rust:1.65
+FROM rust:1.67.1
 WORKDIR /testing
 
 COPY testing/ ./testing 
