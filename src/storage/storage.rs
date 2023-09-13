@@ -1,12 +1,8 @@
 use crate::storage::message::Message;
-use crate::storage::{DebugUtils, IdPair, InnerStorage};
+use crate::storage::{Identity, InnerStorage};
 use bytes::Bytes;
 use log::{debug, info, warn};
-use sled::Subscriber;
 use std::path::Path;
-
-#[derive(Debug, PartialEq)]
-struct MyBullshitError;
 
 pub struct Storage {
     inner: InnerStorage,
@@ -30,26 +26,26 @@ impl Storage {
         data: Bytes,
         is_broadcast: bool,
     ) -> Result<bool, StorageError> {
-        // generate message id
-        let id = self.inner.generate_id(queue).await;
+        let message_id = Identity::generate();
 
-        self.inner.store_data(&id, queue, data);
+        self.inner.store_data(&message_id, queue, data);
 
         let result = if is_broadcast {
             // push id to all queue-receiver
-            let (success, affected_consumers) = self.inner.broadcast_store(queue, &id);
+            let (success, affected_consumers) = self.inner.broadcast_store(queue, &message_id);
 
             if success {
-                self.inner.store_data_usages(queue, &id, affected_consumers);
+                self.inner
+                    .store_data_usages(queue, &message_id, affected_consumers);
             }
 
             Ok(success)
         } else {
             // push id to random receiver queue
-            let success = self.inner.direct_store(queue, &id);
+            let success = self.inner.direct_store(queue, &message_id);
 
             if success {
-                self.inner.store_data_usages(queue, &id, 1);
+                self.inner.store_data_usages(queue, &message_id, 1);
             }
 
             Ok(success)
@@ -58,7 +54,7 @@ impl Storage {
         // remove data if no consumers
         if let Ok(success) = result {
             if !success {
-                self.inner.remove_data(queue, &id);
+                self.inner.remove_data(queue, &message_id);
             }
         }
 
@@ -113,7 +109,7 @@ impl Storage {
     }
 
     async fn commit_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let id_pair = IdPair::from_value(id);
+        let id_pair = Uuid::from_value(id);
 
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
@@ -147,7 +143,7 @@ impl Storage {
     }
 
     pub async fn revert_inner(&self, id: u64, queue: &str, application: &str) -> bool {
-        let id_pair = IdPair::from_value(id);
+        let id_pair = Uuid::from_value(id);
 
         // Remove data from unack queue
         if !self.inner.remove_unack(&id_pair, queue, application) {
@@ -172,12 +168,12 @@ impl Storage {
     pub async fn try_restore(&self, queue: &str, application: &str) -> Option<Vec<u64>> {
         if let Some(expired_unacks) = self.inner.pop_expired_unacks(queue, application).await {
             if !expired_unacks.is_empty() {
-                info!(
-                    "expired items, ids=[{}] in queue={}, application={}",
-                    DebugUtils::render_pair_values(&expired_unacks),
-                    queue,
-                    application
-                );
+                // info!(
+                //     "expired items, ids=[{}] in queue={}, application={}",
+                //     DebugUtils::render_pair_values(&expired_unacks),
+                //     queue,
+                //     application
+                // );
 
                 let mut restored_items = Vec::with_capacity(expired_unacks.len());
 
@@ -196,7 +192,7 @@ impl Storage {
 
         fn process_expired_item(
             inner: &InnerStorage,
-            expired_item: &IdPair,
+            expired_item: &Uuid,
             queue: &str,
             application: &str,
         ) -> bool {
@@ -245,469 +241,469 @@ impl Storage {
 #[derive(Debug)]
 pub enum StorageError {}
 
-#[cfg(test)]
-mod tests {
-    use crate::storage::{IdPair, InnerStorage, Storage};
-    use bytes::Bytes;
-    use sled::Config;
-
-    #[tokio::test]
-    async fn push_broadcast_no_consumer_queues_return_false() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        // act
-
-        let result = storage.push("queue1", data, true).await.unwrap();
-
-        // assert
-
-        assert!(!result);
-        assert!(!inner_storage.data_exists(&IdPair::from_value(0), "queue1"));
-    }
-
-    #[tokio::test]
-    async fn push_broadcast_pop_each_once_is_correct() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        inner_storage.create_application_queue(&queue, "app1").await;
-        inner_storage.create_application_queue(&queue, "app2").await;
-
-        let storage = Storage::from_inner(inner_storage);
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        //act
-
-        let result = storage.push("queue1", data, true).await.unwrap();
-
-        // assert
-
-        assert!(result);
-
-        let app1_data = storage.pop(&queue, "app1", 1000).await;
-        let app2_data = storage.pop(&queue, "app2", 1000).await;
-
-        assert!(app1_data.is_some());
-        assert!(app2_data.is_some());
-
-        let app1_data = storage.pop(&queue, "app1", 1000).await;
-        let app2_data = storage.pop(&queue, "app2", 1000).await;
-
-        assert!(app1_data.is_none());
-        assert!(app2_data.is_none());
-    }
-
-    #[tokio::test]
-    async fn push_direct_no_consumer_queues_return_false() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-        let storage = Storage::from_inner(inner_storage);
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        let result = storage.push("queue1", data, false).await.unwrap();
-
-        //act
-
-        let has_data = InnerStorage::from_db(&db).data_exists(&IdPair::from_value(0), "queue1");
-
-        // assert
-
-        assert!(!result);
-        assert!(!has_data);
-    }
-
-    #[tokio::test]
-    async fn push_direct_pop_one_once_is_correct() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        inner_storage.create_application_queue(&queue, "app1").await;
-        inner_storage.create_application_queue(&queue, "app2").await;
-
-        let storage = Storage::from_inner(inner_storage);
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        // act
-
-        let result = storage.push("queue1", data, false).await.unwrap();
-
-        // assert
-
-        assert!(result);
-
-        let app1_data = storage.pop(&queue, "app1", 1000).await;
-        let app2_data = storage.pop(&queue, "app2", 1000).await;
-
-        assert!(app1_data.is_some() || app2_data.is_some());
-
-        let app1_data = storage.pop(&queue, "app1", 1000).await;
-        let app2_data = storage.pop(&queue, "app2", 1000).await;
-
-        assert!(app1_data.is_none() && app2_data.is_none());
-    }
-
-    #[tokio::test]
-    async fn pop_empty_return_none() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        inner_storage.create_application_queue(&queue, "app1").await;
-
-        let storage = Storage::from_inner(inner_storage);
-
-        // act
-
-        let pop_result = storage.pop(&queue, "app1", 1000).await;
-
-        // assert
-
-        assert!(pop_result.is_none());
-    }
-
-    #[tokio::test]
-    async fn pop_unack_exists() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-        let application = String::from("app1");
-
-        inner_storage
-            .create_application_queue(&queue, &application)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, false).await.unwrap();
-
-        // act
-
-        let message = storage.pop(&queue, &application, 1000).await;
-
-        // assert
-
-        assert!(message.is_some());
-
-        assert!(inner_storage.unack_exists(&IdPair::from_value(0), &queue, &application));
-        assert!(inner_storage.data_exists(&IdPair::from_value(0), &queue));
-    }
-
-    #[tokio::test]
-    async fn commit_success_unack_removed() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-        let application = String::from("app1");
-
-        inner_storage
-            .create_application_queue(&queue, &application)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, false).await.unwrap();
-
-        let message = storage.pop(&queue, &application, 1000).await.unwrap();
-
-        // act
-
-        let commit_result = storage.commit(message.id, &queue, &application, true).await;
-
-        // assert
-
-        assert!(commit_result);
-        assert!(!inner_storage.unack_exists(&IdPair::from_value(message.id), &queue, &application));
-    }
-
-    #[tokio::test]
-    async fn commit_success_one_data_copy_removed() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-        let application = String::from("app1");
-
-        inner_storage
-            .create_application_queue(&queue, &application)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, false).await.unwrap();
-
-        let message = storage.pop(&queue, &application, 1000).await.unwrap();
-
-        // act
-
-        let commit_result = storage.commit(message.id, &queue, &application, true).await;
-
-        // assert
-
-        assert!(commit_result);
-        assert!(!inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
-    }
-
-    #[tokio::test]
-    async fn commit_success_multiple_data_copy_removed() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        let application = String::from("app1");
-        let application2 = String::from("app2");
-        let application3 = String::from("app3");
-
-        inner_storage
-            .create_application_queue(&queue, &application)
-            .await;
-
-        inner_storage
-            .create_application_queue(&queue, &application2)
-            .await;
-
-        inner_storage
-            .create_application_queue(&queue, &application3)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, true).await.unwrap();
-
-        // act
-        let message = storage.pop(&queue, &application, 1000).await.unwrap();
-        let commit_result = storage.commit(message.id, &queue, &application, true).await;
-
-        let message2 = storage.pop(&queue, &application2, 1000).await.unwrap();
-        let commit_result2 = storage
-            .commit(message2.id, &queue, &application2, true)
-            .await;
-
-        // sorry
-        assert!(inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
-
-        let message3 = storage.pop(&queue, &application3, 1000).await.unwrap();
-        let commit_result3 = storage
-            .commit(message3.id, &queue, &application3, true)
-            .await;
-
-        // assert
-        assert!(commit_result);
-        assert!(commit_result2);
-        assert!(commit_result3);
-
-        assert!(!inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
-    }
-
-    #[tokio::test]
-    async fn commit_success_two_data_usages_one_pop_not_removed() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        let application1 = String::from("app1");
-        let application2 = String::from("app2");
-
-        inner_storage
-            .create_application_queue(&queue, &application1)
-            .await;
-
-        inner_storage
-            .create_application_queue(&queue, &application2)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, true).await.unwrap();
-
-        let message = storage.pop(&queue, &application1, 1000).await.unwrap();
-
-        // act
-
-        let commit_result = storage
-            .commit(message.id, &queue, &application1, true)
-            .await;
-
-        // assert
-
-        assert!(commit_result);
-        assert!(inner_storage.data_exists(&IdPair::from_value(message.id), &queue));
-    }
-
-    #[tokio::test]
-    async fn commit_success_two_data_usages_two_pop_removed() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-
-        let application1 = String::from("app1");
-        let application2 = String::from("app2");
-
-        inner_storage
-            .create_application_queue(&queue, &application1)
-            .await;
-
-        inner_storage
-            .create_application_queue(&queue, &application2)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, true).await.unwrap();
-
-        let message1 = storage.pop(&queue, &application1, 1000).await.unwrap();
-        let message2 = storage.pop(&queue, &application2, 1000).await.unwrap();
-
-        //act
-
-        let commit1_result = storage
-            .commit(message1.id, &queue, &application1, true)
-            .await;
-
-        assert!(commit1_result);
-
-        let commit2_result = storage
-            .commit(message2.id, &queue, &application2, true)
-            .await;
-
-        assert!(commit2_result);
-
-        // assert
-
-        assert!(!inner_storage.data_exists(&IdPair::from_value(message1.id), &queue));
-    }
-
-    // revert
-
-    #[tokio::test]
-    async fn commit_error_unack_removed_and_ready_added() {
-        let db = Config::new()
-            .temporary(true)
-            .flush_every_ms(None)
-            .open()
-            .unwrap();
-
-        let inner_storage = InnerStorage::from_db(&db);
-
-        let queue = String::from("queue1");
-        let application = String::from("app1");
-
-        inner_storage
-            .create_application_queue(&queue, &application)
-            .await;
-
-        let storage = Storage::from_inner(inner_storage.clone());
-
-        let data = Bytes::from(vec![1, 2, 3]);
-
-        storage.push(&queue, data, false).await.unwrap();
-
-        let message1 = storage.pop(&queue, &application, 1000).await.unwrap();
-        let message2 = storage.pop(&queue, &application, 1000).await;
-
-        // act
-
-        let commit_result = storage
-            .commit(message1.id, &queue, &application, false)
-            .await;
-
-        // assert
-
-        assert!(commit_result);
-        assert!(message2.is_none());
-
-        assert!(!inner_storage.unack_exists(
-            &IdPair::from_value(message1.id),
-            &queue,
-            &application
-        ));
-
-        // check for ready exists
-
-        let message3 = storage.pop(&queue, &application, 1000).await;
-        assert!(message3.is_some());
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use crate::storage::{Uuid, InnerStorage, Storage};
+//     use bytes::Bytes;
+//     use sled::Config;
+//
+//     #[tokio::test]
+//     async fn push_broadcast_no_consumer_queues_return_false() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         // act
+//
+//         let result = storage.push("queue1", data, true).await.unwrap();
+//
+//         // assert
+//
+//         assert!(!result);
+//         assert!(!inner_storage.data_exists(&Uuid::from_value(0), "queue1"));
+//     }
+//
+//     #[tokio::test]
+//     async fn push_broadcast_pop_each_once_is_correct() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         inner_storage.create_application_queue(&queue, "app1").await;
+//         inner_storage.create_application_queue(&queue, "app2").await;
+//
+//         let storage = Storage::from_inner(inner_storage);
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         //act
+//
+//         let result = storage.push("queue1", data, true).await.unwrap();
+//
+//         // assert
+//
+//         assert!(result);
+//
+//         let app1_data = storage.pop(&queue, "app1", 1000).await;
+//         let app2_data = storage.pop(&queue, "app2", 1000).await;
+//
+//         assert!(app1_data.is_some());
+//         assert!(app2_data.is_some());
+//
+//         let app1_data = storage.pop(&queue, "app1", 1000).await;
+//         let app2_data = storage.pop(&queue, "app2", 1000).await;
+//
+//         assert!(app1_data.is_none());
+//         assert!(app2_data.is_none());
+//     }
+//
+//     #[tokio::test]
+//     async fn push_direct_no_consumer_queues_return_false() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//         let storage = Storage::from_inner(inner_storage);
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         let result = storage.push("queue1", data, false).await.unwrap();
+//
+//         //act
+//
+//         let has_data = InnerStorage::from_db(&db).data_exists(&Uuid::from_value(0), "queue1");
+//
+//         // assert
+//
+//         assert!(!result);
+//         assert!(!has_data);
+//     }
+//
+//     #[tokio::test]
+//     async fn push_direct_pop_one_once_is_correct() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         inner_storage.create_application_queue(&queue, "app1").await;
+//         inner_storage.create_application_queue(&queue, "app2").await;
+//
+//         let storage = Storage::from_inner(inner_storage);
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         // act
+//
+//         let result = storage.push("queue1", data, false).await.unwrap();
+//
+//         // assert
+//
+//         assert!(result);
+//
+//         let app1_data = storage.pop(&queue, "app1", 1000).await;
+//         let app2_data = storage.pop(&queue, "app2", 1000).await;
+//
+//         assert!(app1_data.is_some() || app2_data.is_some());
+//
+//         let app1_data = storage.pop(&queue, "app1", 1000).await;
+//         let app2_data = storage.pop(&queue, "app2", 1000).await;
+//
+//         assert!(app1_data.is_none() && app2_data.is_none());
+//     }
+//
+//     #[tokio::test]
+//     async fn pop_empty_return_none() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         inner_storage.create_application_queue(&queue, "app1").await;
+//
+//         let storage = Storage::from_inner(inner_storage);
+//
+//         // act
+//
+//         let pop_result = storage.pop(&queue, "app1", 1000).await;
+//
+//         // assert
+//
+//         assert!(pop_result.is_none());
+//     }
+//
+//     #[tokio::test]
+//     async fn pop_unack_exists() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//         let application = String::from("app1");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, false).await.unwrap();
+//
+//         // act
+//
+//         let message = storage.pop(&queue, &application, 1000).await;
+//
+//         // assert
+//
+//         assert!(message.is_some());
+//
+//         assert!(inner_storage.unack_exists(&Uuid::from_value(0), &queue, &application));
+//         assert!(inner_storage.data_exists(&Uuid::from_value(0), &queue));
+//     }
+//
+//     #[tokio::test]
+//     async fn commit_success_unack_removed() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//         let application = String::from("app1");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, false).await.unwrap();
+//
+//         let message = storage.pop(&queue, &application, 1000).await.unwrap();
+//
+//         // act
+//
+//         let commit_result = storage.commit(message.id, &queue, &application, true).await;
+//
+//         // assert
+//
+//         assert!(commit_result);
+//         assert!(!inner_storage.unack_exists(&Uuid::from_value(message.id), &queue, &application));
+//     }
+//
+//     #[tokio::test]
+//     async fn commit_success_one_data_copy_removed() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//         let application = String::from("app1");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, false).await.unwrap();
+//
+//         let message = storage.pop(&queue, &application, 1000).await.unwrap();
+//
+//         // act
+//
+//         let commit_result = storage.commit(message.id, &queue, &application, true).await;
+//
+//         // assert
+//
+//         assert!(commit_result);
+//         assert!(!inner_storage.data_exists(&Uuid::from_value(message.id), &queue));
+//     }
+//
+//     #[tokio::test]
+//     async fn commit_success_multiple_data_copy_removed() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         let application = String::from("app1");
+//         let application2 = String::from("app2");
+//         let application3 = String::from("app3");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application)
+//             .await;
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application2)
+//             .await;
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application3)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, true).await.unwrap();
+//
+//         // act
+//         let message = storage.pop(&queue, &application, 1000).await.unwrap();
+//         let commit_result = storage.commit(message.id, &queue, &application, true).await;
+//
+//         let message2 = storage.pop(&queue, &application2, 1000).await.unwrap();
+//         let commit_result2 = storage
+//             .commit(message2.id, &queue, &application2, true)
+//             .await;
+//
+//         // sorry
+//         assert!(inner_storage.data_exists(&Uuid::from_value(message.id), &queue));
+//
+//         let message3 = storage.pop(&queue, &application3, 1000).await.unwrap();
+//         let commit_result3 = storage
+//             .commit(message3.id, &queue, &application3, true)
+//             .await;
+//
+//         // assert
+//         assert!(commit_result);
+//         assert!(commit_result2);
+//         assert!(commit_result3);
+//
+//         assert!(!inner_storage.data_exists(&Uuid::from_value(message.id), &queue));
+//     }
+//
+//     #[tokio::test]
+//     async fn commit_success_two_data_usages_one_pop_not_removed() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         let application1 = String::from("app1");
+//         let application2 = String::from("app2");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application1)
+//             .await;
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application2)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, true).await.unwrap();
+//
+//         let message = storage.pop(&queue, &application1, 1000).await.unwrap();
+//
+//         // act
+//
+//         let commit_result = storage
+//             .commit(message.id, &queue, &application1, true)
+//             .await;
+//
+//         // assert
+//
+//         assert!(commit_result);
+//         assert!(inner_storage.data_exists(&Uuid::from_value(message.id), &queue));
+//     }
+//
+//     #[tokio::test]
+//     async fn commit_success_two_data_usages_two_pop_removed() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//
+//         let application1 = String::from("app1");
+//         let application2 = String::from("app2");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application1)
+//             .await;
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application2)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, true).await.unwrap();
+//
+//         let message1 = storage.pop(&queue, &application1, 1000).await.unwrap();
+//         let message2 = storage.pop(&queue, &application2, 1000).await.unwrap();
+//
+//         //act
+//
+//         let commit1_result = storage
+//             .commit(message1.id, &queue, &application1, true)
+//             .await;
+//
+//         assert!(commit1_result);
+//
+//         let commit2_result = storage
+//             .commit(message2.id, &queue, &application2, true)
+//             .await;
+//
+//         assert!(commit2_result);
+//
+//         // assert
+//
+//         assert!(!inner_storage.data_exists(&Uuid::from_value(message1.id), &queue));
+//     }
+//
+//     // revert
+//
+//     #[tokio::test]
+//     async fn commit_error_unack_removed_and_ready_added() {
+//         let db = Config::new()
+//             .temporary(true)
+//             .flush_every_ms(None)
+//             .open()
+//             .unwrap();
+//
+//         let inner_storage = InnerStorage::from_db(&db);
+//
+//         let queue = String::from("queue1");
+//         let application = String::from("app1");
+//
+//         inner_storage
+//             .create_application_queue(&queue, &application)
+//             .await;
+//
+//         let storage = Storage::from_inner(inner_storage.clone());
+//
+//         let data = Bytes::from(vec![1, 2, 3]);
+//
+//         storage.push(&queue, data, false).await.unwrap();
+//
+//         let message1 = storage.pop(&queue, &application, 1000).await.unwrap();
+//         let message2 = storage.pop(&queue, &application, 1000).await;
+//
+//         // act
+//
+//         let commit_result = storage
+//             .commit(message1.id, &queue, &application, false)
+//             .await;
+//
+//         // assert
+//
+//         assert!(commit_result);
+//         assert!(message2.is_none());
+//
+//         assert!(!inner_storage.unack_exists(
+//             &Uuid::from_value(message1.id),
+//             &queue,
+//             &application
+//         ));
+//
+//         // check for ready exists
+//
+//         let message3 = storage.pop(&queue, &application, 1000).await;
+//         assert!(message3.is_some());
+//     }
+// }

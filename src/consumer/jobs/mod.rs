@@ -1,14 +1,9 @@
-use crate::consumer::jobs::new_events_watcher::NewEventsWatcher;
-use crate::consumer::jobs::stale_events_watcher::StaleEventsWatcher;
 use crate::consumer::ConsumerDto;
 use crate::storage::Storage;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
-
-mod new_events_watcher;
-mod stale_events_watcher;
 
 pub struct ConsumerJobsCollection {
     storage: Arc<Storage>,
@@ -33,19 +28,8 @@ impl ConsumerJobsCollection {
 
     pub fn start(&mut self) {
         let consume_wakeup_task = Arc::new(Notify::new());
-
-        self.jobs_handles.push(NewEventsWatcher::start(
-            Arc::clone(&self.storage),
-            ConsumerConfig::clone(&self.config),
-            Arc::clone(&consume_wakeup_task),
-        ));
-
-        self.jobs_handles.push(StaleEventsWatcher::start(
-            Arc::clone(&self.storage),
-            ConsumerConfig::clone(&self.config),
-            Arc::clone(&consume_wakeup_task),
-            self.data_tx.clone(),
-        ));
+        
+        // jobs
     }
 
     pub fn shutdown(&self) {

@@ -1,20 +1,21 @@
 use crate::storage::collections::InMemoryStructures;
-use crate::storage::{IdPair, Identity, Message, QueueNames, QueueUtils};
+use crate::storage::{Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
 use chrono::Utc;
 use log::{debug, error};
-use sled::{Db, IVec, Subscriber, Tree};
+use redb::{Database, WriteTransaction};
 use std::path::Path;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub struct InnerStorage {
-    store: Arc<Db>,
+    store: Arc<Database>,
     memory_data: InMemoryStructures,
 }
 
 impl InnerStorage {
     pub async fn new<T: AsRef<Path>>(_: T) -> Self {
-        let storage = sled::open("data.mesg").unwrap();
+        let storage = Database::create("data.mesg").unwrap();
         let memory_data = InMemoryStructures::from_db(&storage);
 
         InnerStorage {
@@ -23,21 +24,7 @@ impl InnerStorage {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn from_db(db: &Db) -> Self {
-        let storage = db.clone();
-
-        InnerStorage {
-            store: Arc::new(storage.clone()),
-            memory_data: InMemoryStructures::from_db(&storage),
-        }
-    }
-
-    pub async fn generate_id(&self, queue: &str) -> IdPair {
-        Identity::generate(&self.store, queue).await
-    }
-
-    pub fn store_data(&self, id: &IdPair, queue: &str, data: Bytes) {
+    pub fn store_data(&self, id: &Uuid, queue: &str, data: Bytes) {
         // store data
         self.store
             .open_tree(queue)
@@ -46,7 +33,12 @@ impl InnerStorage {
             .unwrap();
     }
 
-    pub fn get_data(&self, id: &IdPair, queue: &str) -> Option<Message> {
+    pub fn get_data(
+        &self,
+        transaction: &mut WriteTransaction,
+        id: &Uuid,
+        queue: &str,
+    ) -> Option<Message> {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         if let Ok(Some(message_data)) = message_data_queue.get(&id.vector()) {
@@ -60,17 +52,17 @@ impl InnerStorage {
         None
     }
 
-    pub fn store_data_usages(&self, queue: &str, id: &IdPair, usages_count: u32) {
+    pub fn store_data_usages(&self, queue: &str, id: &Uuid, usages_count: u32) {
         let data_usage_key = QueueNames::data_usage(queue);
 
         self.store
             .open_tree(data_usage_key)
             .unwrap()
-            .insert(id.vector(), IdPair::from(usages_count))
+            .insert(id.vector(), Uuid::from(usages_count))
             .unwrap();
     }
 
-    pub fn decrement_data_usage(&self, queue: &str, id: &IdPair) -> Option<u32> {
+    pub fn decrement_data_usage(&self, queue: &str, id: &Uuid) -> Option<u32> {
         let data_queue_name = QueueNames::data_usage(queue);
 
         let mut current_value = 0;
@@ -98,7 +90,7 @@ impl InnerStorage {
         Some(current_value)
     }
 
-    pub fn remove_data(&self, queue: &str, id: &IdPair) -> bool {
+    pub fn remove_data(&self, queue: &str, id: &Uuid) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         // remove shared data
@@ -109,14 +101,14 @@ impl InnerStorage {
         true
     }
 
-    pub fn pop_ready_minimal(&self, queue: &str, application: &str) -> Option<IdPair> {
+    pub fn pop_ready_minimal(&self, queue: &str, application: &str) -> Option<Uuid> {
         let queue_names = QueueNames::new(queue, application);
 
         let ready_queue = self.store.open_tree(queue_names.ready()).unwrap();
 
         // pop minimal element
         if let Ok(Some((k, _))) = ready_queue.pop_min() {
-            return Some(IdPair::from_vector(k));
+            return Some(Uuid::from_vector(k));
         }
 
         None
@@ -124,7 +116,7 @@ impl InnerStorage {
 
     pub async fn store_unack(
         &self,
-        id: &IdPair,
+        id: &Uuid,
         queue: &str,
         application: &str,
         invisibility_timeout_ms: i32,
@@ -150,7 +142,7 @@ impl InnerStorage {
         // store { message_id, expire_time } to unack_order queue
         let unack_order = self.store.open_tree(queue_names.unack_order()).unwrap();
 
-        let expire_vector = IdPair::from(expire_time_millis);
+        let expire_vector = Uuid::from(expire_time_millis);
 
         unack_order
             .insert(&id.vector(), expire_vector.vector())
@@ -164,7 +156,7 @@ impl InnerStorage {
         );
     }
 
-    pub fn remove_unack(&self, id: &IdPair, queue: &str, application: &str) -> bool {
+    pub fn remove_unack(&self, id: &Uuid, queue: &str, application: &str) -> bool {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
@@ -172,7 +164,7 @@ impl InnerStorage {
         matches!(unack_queue.remove(id.vector()), Ok(Some(_)))
     }
 
-    pub async fn pop_expired_unacks(&self, queue: &str, application: &str) -> Option<Vec<IdPair>> {
+    pub async fn pop_expired_unacks(&self, queue: &str, application: &str) -> Option<Vec<Uuid>> {
         let now = Utc::now().timestamp_millis();
 
         let queue_names = QueueNames::new(queue, application);
@@ -191,8 +183,8 @@ impl InnerStorage {
             let mut result = Vec::new();
 
             for expired_id in &expired_items {
-                if let Ok(Some(_)) = unack_order_queue.remove(IdPair::from(*expired_id).vector()) {
-                    let id = IdPair::from_value(*expired_id);
+                if let Ok(Some(_)) = unack_order_queue.remove(Uuid::from(*expired_id).vector()) {
+                    let id = Uuid::from_value(*expired_id);
 
                     if unack_queue.contains_key(id.vector()).unwrap() {
                         // if we succesfully drop item, use it value
@@ -207,7 +199,7 @@ impl InnerStorage {
         }
     }
 
-    pub fn store_ready(&self, id: &IdPair, queue: &str, application: &str) {
+    pub fn store_ready(&self, id: &Uuid, queue: &str, application: &str) {
         let queue_names = QueueNames::new(queue, application);
 
         self.store
@@ -225,14 +217,14 @@ impl InnerStorage {
     }
 
     // Storage
-    pub fn broadcast_store(&self, queue: &str, id: &IdPair) -> (bool, u32) {
+    pub fn broadcast_store(&self, queue: &str, id: &Uuid) -> (bool, u32) {
         let mut pushed = false;
 
         let ready_queues = QueueUtils::get_ready_queues(&self.store, queue);
 
         for ready_queue in &ready_queues {
             self.store
-                .open_tree(ready_queue)
+                .open_tree(&ready_queue)
                 .unwrap()
                 .insert(id.vector(), vec![])
                 .unwrap();
@@ -250,7 +242,7 @@ impl InnerStorage {
         (pushed, ready_queues.len() as u32)
     }
 
-    pub fn direct_store(&self, queue: &str, id: &IdPair) -> bool {
+    pub fn direct_store(&self, queue: &str, id: &Uuid) -> bool {
         match QueueUtils::random_ready_queue_name(&self.store, queue) {
             Some(random_queue_name) => {
                 self.store
@@ -287,14 +279,14 @@ impl InnerStorage {
         QueueUtils::get_unack_queues(&self.store)
     }
 
-    pub fn data_exists(&self, id: &IdPair, queue: &str) -> bool {
+    pub fn data_exists(&self, id: &Uuid, queue: &str) -> bool {
         let message_data_queue = self.store.open_tree(queue).unwrap();
 
         message_data_queue.contains_key(id.vector()).unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn unack_exists(&self, id: &IdPair, queue: &str, application: &str) -> bool {
+    pub fn unack_exists(&self, id: &Uuid, queue: &str, application: &str) -> bool {
         let queue_names = QueueNames::new(queue, application);
 
         let unack_queue = self.store.open_tree(queue_names.unack()).unwrap();
@@ -316,4 +308,8 @@ impl Clone for InnerStorage {
             memory_data: InMemoryStructures::from_db(&Arc::clone(&self.store)),
         }
     }
+}
+
+pub struct Transaction<'db> {
+    tx: WriteTransaction<'db>,
 }

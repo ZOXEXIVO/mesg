@@ -62,27 +62,29 @@ pub mod mesg_protocol_server {
         async fn push(
             &self,
             request: tonic::Request<super::PushRequest>,
-        ) -> Result<tonic::Response<super::PushResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::PushResponse>, tonic::Status>;
         /// Server streaming response type for the Pull method.
-        type PullStream: futures_core::Stream<
-                Item = Result<super::PullResponse, tonic::Status>,
+        type PullStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::PullResponse, tonic::Status>,
             >
             + Send
             + 'static;
         async fn pull(
             &self,
             request: tonic::Request<super::PullRequest>,
-        ) -> Result<tonic::Response<Self::PullStream>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<Self::PullStream>, tonic::Status>;
         async fn commit(
             &self,
             request: tonic::Request<super::CommitRequest>,
-        ) -> Result<tonic::Response<super::CommitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::CommitResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct MesgProtocolServer<T: MesgProtocol> {
         inner: _Inner<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: MesgProtocol> MesgProtocolServer<T> {
@@ -95,6 +97,8 @@ pub mod mesg_protocol_server {
                 inner,
                 accept_compression_encodings: Default::default(),
                 send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
             }
         }
         pub fn with_interceptor<F>(
@@ -118,6 +122,22 @@ pub mod mesg_protocol_server {
             self.send_compression_encodings.enable(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for MesgProtocolServer<T>
     where
@@ -131,7 +151,7 @@ pub mod mesg_protocol_server {
         fn poll_ready(
             &mut self,
             _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        ) -> Poll<std::result::Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -151,13 +171,17 @@ pub mod mesg_protocol_server {
                             &mut self,
                             request: tonic::Request<super::PushRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).push(request).await };
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MesgProtocol>::push(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -167,6 +191,10 @@ pub mod mesg_protocol_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -190,13 +218,17 @@ pub mod mesg_protocol_server {
                             &mut self,
                             request: tonic::Request<super::PullRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).pull(request).await };
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MesgProtocol>::pull(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -206,6 +238,10 @@ pub mod mesg_protocol_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
                         Ok(res)
@@ -228,13 +264,17 @@ pub mod mesg_protocol_server {
                             &mut self,
                             request: tonic::Request<super::CommitRequest>,
                         ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).commit(request).await };
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MesgProtocol>::commit(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
                     let accept_compression_encodings = self.accept_compression_encodings;
                     let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
@@ -244,6 +284,10 @@ pub mod mesg_protocol_server {
                             .apply_compression_config(
                                 accept_compression_encodings,
                                 send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
@@ -272,12 +316,14 @@ pub mod mesg_protocol_server {
                 inner,
                 accept_compression_encodings: self.accept_compression_encodings,
                 send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
             }
         }
     }
     impl<T: MesgProtocol> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone())
+            Self(Arc::clone(&self.0))
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
