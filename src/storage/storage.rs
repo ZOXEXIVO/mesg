@@ -1,11 +1,38 @@
 use crate::storage::message::Message;
-use crate::storage::{Identity, InnerStorage};
+use crate::storage::{Identity};
 use bytes::Bytes;
 use log::{debug, info, warn};
 use std::path::Path;
+use uuid::Uuid;
+
+pub trait StorageEngine {
+    fn store_data(&self, queue: &str, message: Message) -> Result<bool, StorageError>;
+    fn get_data(&self, id: &Uuid, queue: &str) -> Option<Message>;
+    fn remove_data(&self, queue: &str, id: Uuid) -> Result<bool, StorageError>;
+    fn exist(&self, expired_item: &Uuid, queue: &str) -> bool;
+    
+    fn create_application_queue(&self, queue: &str, application: &str);
+    
+    fn store_unack(&self, id: &Uuid, queue: &str, application: &str, invisibility_timeout_ms: i32);
+    fn remove_unack(&self, id: &Uuid, queue: &str, application: &str) -> bool;
+    
+    fn pop(&self, queue: &str, application: &str);
+
+    fn direct_store(&self, queue: &str, id: &Uuid) -> bool;
+    fn broadcast_store(&self, queue: &str, id: &Uuid) -> (bool, u32);
+    
+    fn store_ready(&self, id: &Uuid, queue: &str, application: &str);
+    fn pop_ready_minimal(&self, queue: &str, application: &str) -> Option<Uuid>;
+    
+    fn pop_expired_unacks(&self, queue: &str, application: &str);
+    fn unack_exists(&self, id: &Uuid, queue: &str, application: &str) -> bool;
+    
+    fn store_data_usages(&self, queue: &str, id: &Uuid, usages_count: u32);
+    fn decrement_data_usage(&self, queue: &str, id: &Uuid) -> Option<u32>;
+}
 
 pub struct Storage {
-    inner: InnerStorage,
+    inner: 
 }
 
 impl Storage {
