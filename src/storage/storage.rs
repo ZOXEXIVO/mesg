@@ -1,39 +1,39 @@
 use crate::storage::message::Message;
-use crate::storage::{Identity};
+use crate::storage::Identity;
 use bytes::Bytes;
 use log::{debug, info, warn};
 use std::path::Path;
 use uuid::Uuid;
 
 pub trait StorageEngine {
-    fn store_data(&self, queue: &str, message: Message) -> Result<bool, StorageError>;
-    fn get_data(&self, id: &Uuid, queue: &str) -> Option<Message>;
-    fn remove_data(&self, queue: &str, id: Uuid) -> Result<bool, StorageError>;
-    fn exist(&self, expired_item: &Uuid, queue: &str) -> bool;
-    
+    // data
+    fn data_store(&self, queue: &str, message: Message) -> Result<bool, StorageError>;
+    fn data_get(&self, id: &Uuid, queue: &str) -> Option<Message>;
+    fn data_remove(&self, queue: &str, id: Uuid) -> Result<bool, StorageError>;
+    fn data_exist(&self, expired_item: &Uuid, queue: &str) -> bool;
+    fn data_set_usages(&self, queue: &str, id: &Uuid, usages_count: u32);
+    fn data_decrement_usages(&self, queue: &str, id: &Uuid) -> Option<u32>;
+
+    fn forward_direct(&self, queue: &str, id: &Uuid) -> bool;
+    fn forward_broadcast(&self, queue: &str, id: &Uuid) -> (bool, u32);
+
     fn create_application_queue(&self, queue: &str, application: &str);
-    
-    fn store_unack(&self, id: &Uuid, queue: &str, application: &str, invisibility_timeout_ms: i32);
-    fn remove_unack(&self, id: &Uuid, queue: &str, application: &str) -> bool;
-    
+
     fn pop(&self, queue: &str, application: &str);
-
-    fn direct_store(&self, queue: &str, id: &Uuid) -> bool;
-    fn broadcast_store(&self, queue: &str, id: &Uuid) -> (bool, u32);
-    
-    fn store_ready(&self, id: &Uuid, queue: &str, application: &str);
     fn pop_ready_minimal(&self, queue: &str, application: &str) -> Option<Uuid>;
-    
-    fn pop_expired_unacks(&self, queue: &str, application: &str);
+
+    fn store_ready(&self, id: &Uuid, queue: &str, application: &str);
+
+    //unack
+
+    fn unack_store(&self, id: &Uuid, queue: &str, application: &str, invisibility_timeout_ms: i32);
+    fn unack_remove(&self, id: &Uuid, queue: &str, application: &str) -> bool;
     fn unack_exists(&self, id: &Uuid, queue: &str, application: &str) -> bool;
-    
-    fn store_data_usages(&self, queue: &str, id: &Uuid, usages_count: u32);
-    fn decrement_data_usage(&self, queue: &str, id: &Uuid) -> Option<u32>;
+
+    fn unack_pop_expired(&self, queue: &str, application: &str);
 }
 
-pub struct Storage {
-    inner: 
-}
+pub struct Storage {}
 
 impl Storage {
     pub async fn new<T: AsRef<Path>>(path: T) -> Self {
