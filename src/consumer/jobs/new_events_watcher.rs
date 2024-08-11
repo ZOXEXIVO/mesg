@@ -1,6 +1,6 @@
 use crate::consumer::ConsumerConfig;
 use crate::storage::Storage;
-use log::{debug, info};
+use log::{info};
 use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;

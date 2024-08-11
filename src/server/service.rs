@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use crate::consumer::RawConsumer;
 use crate::controller::MesgController;
 use crate::metrics::StaticMetricsWriter;
-use async_trait::async_trait;
 use bytes::Bytes;
 use log::info;
 

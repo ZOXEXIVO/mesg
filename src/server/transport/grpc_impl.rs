@@ -11,7 +11,8 @@ use crate::server::PullResponse;
 use bytes::Bytes;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::codegen::futures_core::Stream;
+use async_trait::async_trait;
+use tonic::codegen::tokio_stream::Stream;
 
 pub struct MesgGrpcImplService<T: Mesg>
 where
@@ -29,7 +30,7 @@ where
     }
 }
 
-#[tonic::async_trait]
+#[async_trait]
 impl<T: Mesg> MesgProtocol for MesgGrpcImplService<T>
 where
     T: Send + Sync + 'static,

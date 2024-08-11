@@ -1,4 +1,3 @@
-use chrono::Utc;
 use dashmap::DashMap;
 
 pub struct ConsumerStatistics {
@@ -6,7 +5,7 @@ pub struct ConsumerStatistics {
 }
 
 impl ConsumerStatistics {
-    pub fn consumed(id: u32) {
-        let now = Utc::now().timestamp_millis();
+    pub fn consumed(_id: u32) {
+        //let now = Utc::now().timestamp_millis();
     }
 }

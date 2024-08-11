@@ -27,15 +27,17 @@ pub struct MesgServerOptions {
 
 pub struct MesgServer {
     cluster: Cluster,
-    storage: Option<Arc<Storage>>,
+    storage: Arc<Storage>,
     metrics_server_thread: Option<JoinHandle<()>>,
 }
 
 impl MesgServer {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
+        let storage = Storage::new("").await;
+
         MesgServer {
             cluster: Cluster::new(),
-            storage: None,
+            storage: Arc::new(storage),
             metrics_server_thread: None,
         }
     }
@@ -49,13 +51,7 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        let storage = Storage::new("").await;
-
-        self.storage = Some(Arc::new(storage));
-
-        let cloned_storage = Arc::clone(self.storage.as_ref().unwrap());
-
-        let controller = MesgController::new(cloned_storage);
+        let controller = MesgController::new(Arc::clone(&self.storage));
 
         controller.start_jobs();
 

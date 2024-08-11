@@ -3,7 +3,7 @@ use crate::storage::{IdPair, Identity, Message, QueueNames, QueueUtils};
 use bytes::Bytes;
 use chrono::Utc;
 use log::{debug, error};
-use sled::{Db, IVec, Subscriber, Tree};
+use sled::{Db, IVec, Subscriber};
 use std::path::Path;
 use std::sync::Arc;
 

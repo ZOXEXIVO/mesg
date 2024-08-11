@@ -41,7 +41,7 @@ async fn main() -> Result<(), std::io::Error> {
         metric_port: options.metric_port,
     };
 
-    MesgServer::new().run(server_options).await?;
+    MesgServer::new().await.run(server_options).await?;
 
     Ok(())
 }

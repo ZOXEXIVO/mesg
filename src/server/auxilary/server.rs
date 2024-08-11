@@ -1,49 +1,62 @@
 use crate::metrics::StaticMetricsWriter;
 use crate::server::transport::proto::PROTOFILE;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use std::{convert::Infallible, net::SocketAddr};
+use http_body_util::Full;
+use hyper::{body::{Bytes}, server::conn::http1, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use log::info;
-use std::convert::Infallible;
+use tokio::net::TcpListener;
+use tower::ServiceBuilder;
 
 pub struct AuxiliaryServer;
 
 impl AuxiliaryServer {
     pub async fn start(port: u16) {
-        let bind_address = ([0, 0, 0, 0], port).into();
+        let addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
-        let server = Server::bind(&bind_address).serve(make_service_fn(|_conn| async {
-            Ok::<_, Infallible>(service_fn(handle_func))
-        }));
+        let listener = TcpListener::bind(&addr).await.unwrap();
 
-        info!("protofile: http://0.0.0.0:{}/proto", port);
-        info!("metrics endpoint: http://0.0.0.0:{}/metrics", port);
+        info!("protofile: http://127.0.0.1:{}/proto", port);
+        info!("metrics endpoint: http://127.0.0.1:{}/metrics", port);
 
-        server.await.unwrap();
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+
+            tokio::spawn(async move {
+                let svc = ServiceBuilder::new().service(
+                    hyper::service::service_fn(handle_func)
+                );
+
+                if let Err(err) = http1::Builder::new().serve_connection(TokioIo::new(stream), svc).await {
+                    eprintln!("server error: {}", err);
+                }
+            });
+        }
     }
 }
 
-async fn handle_func(request: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn handle_func(request: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>, Infallible> {
     match request.uri().to_string().as_ref() {
         "/proto" => proto(request),
         "/metrics" => metrics(request),
-        _ => Ok(Response::new(Body::empty())),
+        _ => Ok(Response::new(Full::new(Bytes::from("Hello World!"))))
     }
 }
 
-fn proto(_: Request<Body>) -> Result<Response<Body>, Infallible> {
+fn proto(_: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>, Infallible> {
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/protobuf")
-        .body(Body::from(PROTOFILE))
+        .body(Full::from(Bytes::from(PROTOFILE)))
         .unwrap();
 
     Ok(response)
 }
 
-fn metrics(_: Request<Body>) -> Result<Response<Body>, Infallible> {
+fn metrics(_: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>, Infallible> {
     let mut result = String::with_capacity(4096);
 
     StaticMetricsWriter::write(&mut result);
 
-    Ok(Response::new(Body::from(result)))
+    Ok(Response::new(Full::from(result)))
 }
