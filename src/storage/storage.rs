@@ -1,7 +1,7 @@
-use crate::storage::{MesgInnerStorage, MesgStorageError};
+use crate::storage::raw::RawFileStorage;
+use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 use bytes::Bytes;
 use std::path::Path;
-use crate::storage::raw::RawFileStorage;
 
 pub type MesgStorage = Storage<RawFileStorage>;
 
@@ -16,7 +16,7 @@ impl<S: MesgInnerStorage> Storage<S> {
         }
     }
 
-    pub async fn create_consumer_queue(&self, queue: &str, application: &str) {
+    pub async fn ensure_application_queue(&self, queue: &str, application: &str) {
         self.inner_storage
             .ensure_application_queue(queue, application)
             .await
@@ -29,6 +29,17 @@ impl<S: MesgInnerStorage> Storage<S> {
         is_broadcast: bool,
     ) -> Result<bool, MesgStorageError> {
         self.inner_storage.push(queue, data, is_broadcast).await
+    }
+
+    async fn pop(
+        &self,
+        queue: &str,
+        application: &str,
+        invisibility_timeout_ms: i32,
+    ) -> Result<Option<Message>, MesgStorageError> {
+        self.inner_storage
+            .pop(queue, application, invisibility_timeout_ms)
+            .await
     }
 
     pub async fn commit(

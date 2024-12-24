@@ -1,7 +1,7 @@
 use std::path::Path;
 use bytes::Bytes;
 
-use crate::storage::{MesgInnerStorage, MesgStorageError};
+use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 
 pub struct RawFileStorage {
 
@@ -22,6 +22,15 @@ impl MesgInnerStorage for RawFileStorage {
         Ok(true)
     }
 
+    async fn pop(
+        &self,
+        queue: &str,
+        application: &str,
+        invisibility_timeout_ms: i32,
+    ) -> Result<Option<Message>, MesgStorageError> {
+        Ok(None)
+    }
+    
     async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> Result<bool, MesgStorageError> {
         Ok(true)
     }

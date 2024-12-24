@@ -35,7 +35,7 @@ impl MesgController {
 
         // create application queue
         self.storage
-            .create_consumer_queue(queue, application)
+            .ensure_application_queue(queue, application)
             .await;
 
         RawConsumer::from(consumer_handle)
