@@ -11,7 +11,7 @@ use crate::server::PullResponse;
 use bytes::Bytes;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::codegen::futures_core::Stream;
+use tonic::codegen::tokio_stream::Stream;
 
 pub struct MesgGrpcImplService<T: Mesg>
 where
