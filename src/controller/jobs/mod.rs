@@ -1,16 +1,16 @@
 ﻿use crate::controller::jobs::restorer::ExpiredMessageRestorerJob;
-use crate::storage::Storage;
+use crate::storage::{MesgStorage};
 use std::sync::Arc;
 
 mod restorer;
 
 pub struct BackgroundJobs {
-    storage: Arc<Storage>,
+    storage: Arc<MesgStorage>,
     expited_message_restorer_job: ExpiredMessageRestorerJob,
 }
 
 impl BackgroundJobs {
-    pub fn new(storage: Arc<Storage>) -> Self {
+    pub fn new(storage: Arc<MesgStorage>) -> Self {
         BackgroundJobs {
             storage,
             expited_message_restorer_job: ExpiredMessageRestorerJob::new(),

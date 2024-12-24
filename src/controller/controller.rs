@@ -1,17 +1,17 @@
 use crate::consumer::{ConsumerCollection, RawConsumer};
 use crate::controller::jobs::BackgroundJobs;
-use crate::storage::Storage;
+use crate::storage::{MesgStorage};
 use bytes::Bytes;
 use std::sync::Arc;
 
 pub struct MesgController {
-    storage: Arc<Storage>,
+    storage: Arc<MesgStorage>,
     consumers: ConsumerCollection,
     background_jobs: BackgroundJobs,
 }
 
 impl MesgController {
-    pub fn new(storage: Arc<Storage>) -> Self {
+    pub fn new(storage: Arc<MesgStorage>) -> Self {
         MesgController {
             storage: Arc::clone(&storage),
             consumers: ConsumerCollection::new(),
@@ -35,7 +35,7 @@ impl MesgController {
 
         // create application queue
         self.storage
-            .create_application_queue(queue, application)
+            .create_consumer_queue(queue, application)
             .await;
 
         RawConsumer::from(consumer_handle)
@@ -49,7 +49,7 @@ impl MesgController {
     }
 
     pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
-        self.storage.commit(id, queue, application, success).await
+        self.storage.commit(id, queue, application, success).await.unwrap()
     }
 
     pub fn start_jobs(&self) {

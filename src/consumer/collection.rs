@@ -1,5 +1,5 @@
 use crate::consumer::{Consumer, ConsumerHandle, ConsumersShutdownWaiter};
-use crate::storage::Storage;
+use crate::storage::{MesgStorage};
 use log::info;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -30,7 +30,7 @@ impl ConsumerCollection {
 
     pub async fn add_consumer(
         &self,
-        storage: Arc<Storage>,
+        storage: Arc<MesgStorage>,
         queue: &str,
         application: &str,
         invisibility_timeout_ms: i32,

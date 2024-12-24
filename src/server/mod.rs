@@ -12,11 +12,12 @@ use crate::server::auxilary::AuxiliaryServer;
 use crate::server::service::MesgService;
 use crate::server::transport::grpc_impl::MesgGrpcImplService;
 use crate::server::transport::mesg_protocol_server::MesgProtocolServer;
-use crate::storage::Storage;
 use std::thread::JoinHandle;
 use tokio::runtime::Runtime;
 
 pub use crate::server::transport::grpc::PullResponse;
+use crate::storage::raw::RawFileStorage;
+use crate::storage::{MesgStorage};
 use std::sync::Arc;
 
 pub struct MesgServerOptions {
@@ -27,7 +28,7 @@ pub struct MesgServerOptions {
 
 pub struct MesgServer {
     cluster: Cluster,
-    storage: Option<Arc<Storage>>,
+    storage: Option<Arc<MesgStorage>>,
     metrics_server_thread: Option<JoinHandle<()>>,
 }
 
@@ -49,7 +50,7 @@ impl MesgServer {
 
         info!("listening: {0}", addr);
 
-        let storage = Storage::new("").await;
+        let storage = MesgStorage::new("").await;
 
         self.storage = Some(Arc::new(storage));
 

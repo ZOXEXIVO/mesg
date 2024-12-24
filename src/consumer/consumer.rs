@@ -1,5 +1,5 @@
 use crate::consumer::{ConsumerConfig, ConsumerDto, ConsumerJobsCollection};
-use crate::storage::Storage;
+use crate::storage::{MesgStorage};
 use log::debug;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -12,7 +12,7 @@ pub struct Consumer {
 impl Consumer {
     pub fn new(
         id: u32,
-        storage: Arc<Storage>,
+        storage: Arc<MesgStorage>,
         queue: String,
         application: String,
         invisibility_timeout: i32,

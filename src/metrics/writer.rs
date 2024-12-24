@@ -2,16 +2,11 @@
 use std::fmt::Write;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-extern crate lazy_static;
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref PUSH_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
-    static ref CONSUMERS_COUNT_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
-    static ref COMMIT_METRIC: CHashMap<String, Arc<AtomicU64>> = CHashMap::new();
-}
+static PUSH_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
+static CONSUMERS_COUNT_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
+static COMMIT_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
 
 #[derive(Clone)]
 pub struct StaticMetricsWriter;

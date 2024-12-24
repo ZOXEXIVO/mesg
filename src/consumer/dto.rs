@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use crate::storage::Message;
 
 pub struct ConsumerDto {
     pub id: u64,
@@ -15,11 +14,11 @@ impl Clone for ConsumerDto {
     }
 }
 
-impl From<Message> for ConsumerDto {
-    fn from(message: Message) -> Self {
-        ConsumerDto {
-            id: message.id,
-            data: Bytes::clone(&message.data),
-        }
-    }
-}
+// impl From<Message> for ConsumerDto {
+//     fn from(message: Message) -> Self {
+//         ConsumerDto {
+//             id: message.id,
+//             data: Bytes::clone(&message.data),
+//         }
+//     }
+// }
