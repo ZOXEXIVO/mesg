@@ -16,12 +16,6 @@ impl<S: MesgInnerStorage> Storage<S> {
         }
     }
 
-    pub async fn ensure_application_queue(&self, queue: &str, application: &str) {
-        self.inner_storage
-            .ensure_application_queue(queue, application)
-            .await
-    }
-
     pub async fn push(
         &self,
         queue: &str,

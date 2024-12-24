@@ -32,12 +32,7 @@ impl MesgController {
             .consumers
             .add_consumer(storage, queue, application, invisibility_timeout)
             .await;
-
-        // create application queue
-        self.storage
-            .ensure_application_queue(queue, application)
-            .await;
-
+        
         RawConsumer::from(consumer_handle)
     }
 

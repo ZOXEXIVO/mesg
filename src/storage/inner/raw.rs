@@ -14,10 +14,6 @@ impl MesgInnerStorage for RawFileStorage {
         }
     }
 
-    async fn ensure_application_queue(&self, queue: &str, application: &str) {
-
-    }
-
     async fn push(&self, queue: &str, data: Bytes, is_broadcast: bool) -> Result<bool, MesgStorageError> {
         Ok(true)
     }
@@ -30,6 +26,7 @@ impl MesgInnerStorage for RawFileStorage {
     ) -> Result<Option<Message>, MesgStorageError> {
         Ok(None)
     }
+    
     
     async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> Result<bool, MesgStorageError> {
         Ok(true)

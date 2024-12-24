@@ -7,8 +7,6 @@ use crate::storage::Message;
 pub trait MesgInnerStorage {
     async fn create<P: AsRef<Path>>(path: P) -> Self;
 
-    async fn ensure_application_queue(&self, queue: &str, application: &str);
-
     async fn push(
         &self,
         queue: &str,
@@ -22,7 +20,7 @@ pub trait MesgInnerStorage {
         application: &str,
         invisibility_timeout_ms: i32,
     ) -> Result<Option<Message>, MesgStorageError>;
-    
+
     async fn commit(
         &self,
         id: u64,
