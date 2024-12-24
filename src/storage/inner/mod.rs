@@ -6,7 +6,7 @@ use std::path::Path;
 pub trait MesgInnerStorage {
     async fn create<P: AsRef<Path>>(path: P) -> Self;
 
-    async fn create_consumer_queue(&self, queue: &str, application: &str);
+    async fn ensure_application_queue(&self, queue: &str, application: &str);
 
     async fn push(
         &self,

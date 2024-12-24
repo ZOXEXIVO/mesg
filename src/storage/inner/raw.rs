@@ -14,7 +14,7 @@ impl MesgInnerStorage for RawFileStorage {
         }
     }
 
-    async fn create_consumer_queue(&self, queue: &str, application: &str) {
+    async fn ensure_application_queue(&self, queue: &str, application: &str) {
 
     }
 

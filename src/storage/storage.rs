@@ -18,7 +18,7 @@ impl<S: MesgInnerStorage> Storage<S> {
 
     pub async fn create_consumer_queue(&self, queue: &str, application: &str) {
         self.inner_storage
-            .create_consumer_queue(queue, application)
+            .ensure_application_queue(queue, application)
             .await
     }
 

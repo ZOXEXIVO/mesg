@@ -1,4 +1,3 @@
-use bytes::Bytes;
 pub mod storage;
 pub mod inner;
 pub mod models;

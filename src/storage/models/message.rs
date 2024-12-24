@@ -2,13 +2,13 @@
 use std::cmp::Ordering;
 
 pub struct Message {
-    pub id: u64,
+    pub id: String,
     pub data: Bytes,
     pub delivered: bool,
 }
 
 impl Message {
-    pub fn new(id: u64, data: Bytes) -> Self {
+    pub fn new(id: String, data: Bytes) -> Self {
         Message {
             id,
             data: Bytes::clone(&data),
@@ -32,15 +32,13 @@ impl PartialEq for Message {
 impl Eq for Message {}
 
 impl PartialOrd<Message> for Message {
-    fn partial_cmp(&self, other: &Message) -> Option<Ordering> {
-        self.id.partial_cmp(&other.id)
-    }
+    fn partial_cmp(&self, other: &Message) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 impl Clone for Message {
     fn clone(&self) -> Self {
         Message {
-            id: self.id,
+            id: self.id.to_owned(),
             data: Bytes::clone(&self.data),
             delivered: self.delivered,
         }
