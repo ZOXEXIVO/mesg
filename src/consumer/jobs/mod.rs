@@ -1,15 +1,17 @@
+mod events_watcher;
+
+use crate::consumer::jobs::events_watcher::EventsWatcher;
 use crate::consumer::ConsumerDto;
+use crate::storage::MesgStorage;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Notify;
-use tokio::task::JoinHandle;
-use crate::storage::MesgStorage;
 
 pub struct ConsumerJobsCollection {
     storage: Arc<MesgStorage>,
     config: ConsumerConfig,
     data_tx: Sender<ConsumerDto>,
-    jobs_handles: Vec<JoinHandle<()>>,
+    jobs: Vec<Box<dyn ConsumerBackgroundJob + Sync + Send>>,
 }
 
 impl ConsumerJobsCollection {
@@ -22,17 +24,28 @@ impl ConsumerJobsCollection {
             storage,
             config,
             data_tx,
-            jobs_handles: Vec::new(),
+            jobs: vec![Box::new(EventsWatcher::new())],
         }
     }
 
-    pub fn start(&mut self) {
-        let consume_wakeup_task = Arc::new(Notify::new());
+    pub fn add_job(&mut self, job: Box<dyn ConsumerBackgroundJob + Sync + Send>) {
+        self.jobs.push(job);
     }
 
-    pub fn shutdown(&self) {
-        for handle in &self.jobs_handles {
-            handle.abort()
+    pub fn start(&mut self) {
+        for job in &mut self.jobs {
+            job.start(
+                Arc::clone(&self.storage),
+                self.config.clone(),
+                Arc::new(Notify::new()),
+                self.data_tx.clone(),
+            );
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        for handle in &mut self.jobs {
+            handle.stop()
         }
     }
 }
@@ -59,4 +72,16 @@ impl ConsumerConfig {
             invisibility_timeout,
         }
     }
+}
+
+pub trait ConsumerBackgroundJob {
+    fn start(
+        &mut self,
+        storage: Arc<MesgStorage>,
+        config: ConsumerConfig,
+        notify: Arc<Notify>,
+        data_tx: Sender<ConsumerDto>,
+    );
+
+    fn stop(&mut self);
 }

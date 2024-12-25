@@ -2,6 +2,7 @@ pub mod raw;
 
 use bytes::Bytes;
 use std::path::Path;
+use uuid7::Uuid;
 use crate::storage::Message;
 
 pub trait MesgInnerStorage {
@@ -23,10 +24,17 @@ pub trait MesgInnerStorage {
 
     async fn commit(
         &self,
-        id: u64,
+        id: Uuid,
         queue: &str,
         application: &str,
         success: bool,
+    ) -> Result<bool, MesgStorageError>;
+
+    async fn revert(
+        &self,
+        id: Uuid,
+        queue: &str,
+        application: &str,
     ) -> Result<bool, MesgStorageError>;
 }
 

@@ -8,7 +8,8 @@ mod tests {
     use std::env;
     use tokio::time::{sleep, Duration};
 
-    const DEFAULT_MESG_URL: &'static str = "http://172.17.0.1:37000";
+    //const DEFAULT_MESG_URL: &'static str = "http://172.17.0.1:37000";
+    const DEFAULT_MESG_URL: &'static str = "http://0.0.0.0:35000";
 
     #[tokio::test]
     async fn push_pull_once_direct_success() {

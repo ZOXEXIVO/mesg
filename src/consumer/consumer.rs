@@ -27,7 +27,7 @@ impl Consumer {
         Consumer { id, jobs }
     }
 
-    pub async fn shutdown(&self) {
+    pub async fn shutdown(&mut self) {
         debug!("shutting down consumer[id={}] jobs", self.id);
 
         self.jobs.shutdown();

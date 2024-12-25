@@ -10,8 +10,10 @@ use crate::server::transport::grpc::{
 use crate::server::PullResponse;
 use bytes::Bytes;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll};
 use tonic::codegen::tokio_stream::Stream;
+use uuid7::Uuid;
 
 pub struct MesgGrpcImplService<T: Mesg>
 where
@@ -114,7 +116,7 @@ impl Stream for InternalStreamConsumer {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match Pin::new(&mut self.inner_consumer).poll(cx) {
             Poll::Ready(item) => Poll::Ready(Some(Ok(PullResponse {
-                id: item.id,
+                id: item.id.to_string(),
                 data: item.data.to_vec(),
             }))),
             _ => Poll::Pending,

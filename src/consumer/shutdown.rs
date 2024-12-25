@@ -18,7 +18,7 @@ impl ConsumersShutdownWaiter {
                     .position(|c| c.id == consumer_id_to_remove)
                 {
                     Some(consumer_pos) => {
-                        let consumer = consumers_guard.remove(consumer_pos);
+                        let mut consumer = consumers_guard.remove(consumer_pos);
 
                         consumer.shutdown().await;
 

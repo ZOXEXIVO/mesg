@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use crate::controller::jobs::BackgroundJob;
+use crate::controller::jobs::ControllerBackgroundJob;
 use crate::storage::MesgStorage;
 
 pub struct ExpiredMessageRestorerJob {
@@ -17,8 +17,12 @@ impl ExpiredMessageRestorerJob {
     }
 }
 
-impl BackgroundJob for ExpiredMessageRestorerJob {
+impl ControllerBackgroundJob for ExpiredMessageRestorerJob {
     fn start(&self, storage: Arc<MesgStorage>) {
         
+    }
+
+    fn stop(&self) {
+
     }
 }

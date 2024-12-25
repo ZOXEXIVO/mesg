@@ -2,6 +2,7 @@ use crate::storage::raw::RawFileStorage;
 use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 use bytes::Bytes;
 use std::path::Path;
+use uuid7::Uuid;
 
 pub type MesgStorage = Storage<RawFileStorage>;
 
@@ -25,7 +26,7 @@ impl<S: MesgInnerStorage> Storage<S> {
         self.inner_storage.push(queue, data, is_broadcast).await
     }
 
-    async fn pop(
+    pub async fn pop(
         &self,
         queue: &str,
         application: &str,
@@ -38,13 +39,24 @@ impl<S: MesgInnerStorage> Storage<S> {
 
     pub async fn commit(
         &self,
-        id: u64,
+        id: Uuid,
         queue: &str,
         application: &str,
         success: bool,
     ) -> Result<bool, MesgStorageError> {
         self.inner_storage
             .commit(id, queue, application, success)
+            .await
+    }
+
+    pub async fn revert(
+        &self,
+        id: Uuid,
+        queue: &str,
+        application: &str,
+    ) -> Result<bool, MesgStorageError> {
+        self.inner_storage
+            .revert(id, queue, application)
             .await
     }
 }

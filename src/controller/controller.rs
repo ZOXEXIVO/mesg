@@ -3,6 +3,7 @@ use crate::controller::jobs::BackgroundJobs;
 use crate::storage::{MesgStorage};
 use bytes::Bytes;
 use std::sync::Arc;
+use uuid7::Uuid;
 
 pub struct MesgController {
     storage: Arc<MesgStorage>,
@@ -43,7 +44,7 @@ impl MesgController {
             .unwrap()
     }
 
-    pub async fn commit(&self, id: u64, queue: &str, application: &str, success: bool) -> bool {
+    pub async fn commit(&self, id: Uuid, queue: &str, application: &str, success: bool) -> bool {
         self.storage.commit(id, queue, application, success).await.unwrap()
     }
 

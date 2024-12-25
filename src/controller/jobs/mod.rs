@@ -5,7 +5,7 @@ mod restorer;
 
 pub struct BackgroundJobs {
     storage: Arc<MesgStorage>,
-    jobs: Vec<Box<dyn BackgroundJob + Sync + Send + 'static>>,
+    jobs: Vec<Box<dyn ControllerBackgroundJob + Sync + Send>>,
 }
 
 impl BackgroundJobs {
@@ -16,10 +16,9 @@ impl BackgroundJobs {
         }
     }
 
-    pub fn add_job(&mut self, job: Box<dyn BackgroundJob + Sync + Send + 'static>) {
+    pub fn add_job(&mut self, job: Box<dyn ControllerBackgroundJob + Sync + Send>) {
         self.jobs.push(job);
     }
-
 
     pub fn start(&self) {
         for job in &self.jobs {
@@ -29,6 +28,7 @@ impl BackgroundJobs {
 }
 
 
-pub trait BackgroundJob {
+pub trait ControllerBackgroundJob {
     fn start(&self, storage: Arc<MesgStorage>);
+    fn stop(&self);
 }

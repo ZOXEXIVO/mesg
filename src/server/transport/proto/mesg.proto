@@ -27,14 +27,14 @@ message PullRequest {
 }
 
 message PullResponse {
-  uint64 id = 1;
+  string id = 1;
   bytes data = 2;
 }
 
 // Commit 
 
 message CommitRequest {
-  uint64 id = 1;
+  string id = 1;
   string queue = 2;
   string application = 3;
 

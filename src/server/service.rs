@@ -1,9 +1,11 @@
+use std::str::FromStr;
 use crate::consumer::RawConsumer;
 use crate::controller::MesgController;
 use crate::metrics::StaticMetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::info;
+use uuid7::Uuid;
 
 #[async_trait]
 pub trait Mesg {
@@ -58,11 +60,13 @@ impl Mesg for MesgService {
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel {
         StaticMetricsWriter::inc_commit_metric(&request.queue);
 
+        let uuid = Uuid::from_str(&request.id).unwrap();
+
         CommitResponseModel {
             success: self
                 .controller
                 .commit(
-                    request.id,
+                    uuid,
                     &request.queue,
                     &request.application,
                     request.success,
@@ -98,7 +102,7 @@ pub struct PullResponseModel {
 // Commit
 
 pub struct CommitRequestModel {
-    pub id: u64,
+    pub id: String,
     pub queue: String,
     pub application: String,
 
