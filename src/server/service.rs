@@ -5,7 +5,7 @@ use crate::metrics::StaticMetricsWriter;
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::info;
-use uuid7::Uuid;
+use uuid::Uuid;
 
 #[async_trait]
 pub trait Mesg {

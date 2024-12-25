@@ -5,7 +5,7 @@ use log::{debug, error, warn};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
-use uuid7::Uuid;
+use uuid::Uuid;
 use crate::consumer::{ConsumerBackgroundJob, ConsumerConfig, ConsumerDto, ConsumerStatistics};
 use crate::storage::MesgStorage;
 

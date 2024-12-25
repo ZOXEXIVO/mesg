@@ -10,10 +10,8 @@ use crate::server::transport::grpc::{
 use crate::server::PullResponse;
 use bytes::Bytes;
 use std::pin::Pin;
-use std::str::FromStr;
 use std::task::{Context, Poll};
 use tonic::codegen::tokio_stream::Stream;
-use uuid7::Uuid;
 
 pub struct MesgGrpcImplService<T: Mesg>
 where

@@ -4,7 +4,7 @@ use std::path::Path;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use uuid7::Uuid;
+use uuid::Uuid;
 
 pub struct RawFileStorage {
     path: String,
@@ -24,7 +24,7 @@ impl MesgInnerStorage for RawFileStorage {
         data: Bytes,
         is_broadcast: bool,
     ) -> Result<bool, MesgStorageError> {
-        let id = uuid7::uuid7();
+        let id = Uuid::new_v4();
 
         let file_path = format!("{}/{}/{}", self.path, queue, id);
         let mut file = File::create(&file_path).await.unwrap();

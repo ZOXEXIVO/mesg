@@ -3,7 +3,7 @@ use crate::controller::jobs::BackgroundJobs;
 use crate::storage::{MesgStorage};
 use bytes::Bytes;
 use std::sync::Arc;
-use uuid7::Uuid;
+use uuid::Uuid;
 
 pub struct MesgController {
     storage: Arc<MesgStorage>,

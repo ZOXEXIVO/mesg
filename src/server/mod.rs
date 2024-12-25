@@ -62,6 +62,7 @@ impl MesgServer {
         let service = MesgService::new(controller);
 
         Server::builder()
+            .accept_http1(true)
             .add_service(MesgProtocolServer::new(MesgGrpcImplService::new(service)))
             .serve(addr)
             .await

@@ -2,7 +2,7 @@ use crate::storage::raw::RawFileStorage;
 use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 use bytes::Bytes;
 use std::path::Path;
-use uuid7::Uuid;
+use uuid::Uuid;
 
 pub type MesgStorage = Storage<RawFileStorage>;
 

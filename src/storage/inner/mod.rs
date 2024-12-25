@@ -2,7 +2,7 @@ pub mod raw;
 
 use bytes::Bytes;
 use std::path::Path;
-use uuid7::Uuid;
+use uuid::Uuid;
 use crate::storage::Message;
 
 pub trait MesgInnerStorage {
@@ -39,4 +39,7 @@ pub trait MesgInnerStorage {
 }
 
 #[derive(Debug)]
-pub enum MesgStorageError {}
+pub struct MesgStorageError {
+    message: String
+}
+

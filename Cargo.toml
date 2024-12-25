@@ -21,7 +21,7 @@ async-trait = "0.1.83"
 color-eyre = "0.6.3"
 structopt = "0.3.26"
 dashmap = "6.1.0"
-uuid7 = "1.1.0"
+uuid = { version = "1.4.1", features = ["v4"] }
 
 [build-dependencies]
 tonic-build = "0.12.3"
