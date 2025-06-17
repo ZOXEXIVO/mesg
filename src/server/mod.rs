@@ -4,7 +4,6 @@ mod transport;
 
 use tonic::transport::Server;
 
-use crate::cluster::cluster::Cluster;
 use log::info;
 
 use crate::controller::MesgController;
@@ -26,7 +25,7 @@ pub struct MesgServerOptions {
 }
 
 pub struct MesgServer {
-    cluster: Cluster,
+    //cluster: Cluster,
     storage: Option<Arc<MesgStorage>>,
     metrics_server_thread: Option<JoinHandle<()>>,
 }
@@ -34,7 +33,7 @@ pub struct MesgServer {
 impl MesgServer {
     pub fn new() -> Self {
         MesgServer {
-            cluster: Cluster::new(),
+            //cluster: Cluster::new(),
             storage: None,
             metrics_server_thread: None,
         }
