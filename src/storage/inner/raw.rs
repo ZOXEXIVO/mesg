@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::{Mutex, RwLock};
-use tokio::time::{interval, Instant};
+use tokio::time::{interval};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Encode, Decode)]

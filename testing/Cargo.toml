@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.45.1", features = ["full"] }
-tonic = "0.12.3"
-prost = "0.13.5"
+tonic = "0.13.1"
+prost = "0.14.1"
 
 [build-dependencies]
-tonic-build = "0.12.3"
+tonic-build = "0.13.1"
