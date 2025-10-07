@@ -16,8 +16,6 @@ struct QueueMessage {
     data: Bytes,
     timestamp: u64,
     delivery_count: u32,
-    // For tracking which apps have seen this broadcast message
-    delivered_to_apps: HashSet<String>,
 }
 
 #[derive(Debug)]
@@ -61,10 +59,10 @@ impl ApplicationQueue {
 
 #[derive(Debug)]
 struct QueueState {
-    /// Main queue for non-broadcast messages (shared pool)
+    /// Main queue for non-broadcast messages (shared across all apps)
     shared_queue: VecDeque<QueueMessage>,
-    /// Broadcast messages that need to be delivered to all apps
-    broadcast_queue: VecDeque<QueueMessage>,
+    /// Broadcast messages with tracking of which apps have received them
+    broadcast_messages: VecDeque<(QueueMessage, HashSet<String>)>, // (message, delivered_to_apps)
     /// Per-application sub-queues
     app_queues: DashMap<String, ApplicationQueue>,
     /// Message sequence number for ordering
@@ -75,16 +73,29 @@ impl QueueState {
     fn new() -> Self {
         QueueState {
             shared_queue: VecDeque::new(),
-            broadcast_queue: VecDeque::new(),
+            broadcast_messages: VecDeque::new(),
             app_queues: DashMap::new(),
             sequence: AtomicU64::new(0),
         }
     }
 
-    fn get_or_create_app_queue(&self, application: &str) -> dashmap::mapref::one::RefMut<String, ApplicationQueue> {
-        self.app_queues
+    fn get_or_create_app_queue(&mut self, application: &str) -> dashmap::mapref::one::RefMut<String, ApplicationQueue> {
+        let is_new = !self.app_queues.contains_key(application);
+        let mut app_queue = self.app_queues
             .entry(application.to_string())
-            .or_insert_with(ApplicationQueue::new)
+            .or_insert_with(ApplicationQueue::new);
+
+        // If this is a new application, deliver all pending broadcast messages to it
+        if is_new {
+            for (broadcast_msg, delivered_to) in &mut self.broadcast_messages {
+                if !delivered_to.contains(application) {
+                    app_queue.ready_messages.push_back(broadcast_msg.clone());
+                    delivered_to.insert(application.to_string());
+                }
+            }
+        }
+
+        app_queue
     }
 
     fn check_expired_messages(&mut self, now: u64) {
@@ -95,50 +106,40 @@ impl QueueState {
     }
 
     fn distribute_broadcast_messages(&mut self) {
-        // Copy broadcast messages to each application queue that hasn't received them
-        let mut processed_broadcasts = Vec::new();
+        // Distribute pending broadcasts to all existing apps
+        let mut fully_delivered = Vec::new();
 
-        for broadcast_msg in &mut self.broadcast_queue {
-            let mut all_apps_received = true;
-
-            // Collect app names that need this message
-            let apps_needing_message: Vec<String> = self.app_queues
+        for (idx, (broadcast_msg, delivered_to)) in self.broadcast_messages.iter_mut().enumerate() {
+            let apps_to_deliver: Vec<String> = self.app_queues
                 .iter()
                 .filter_map(|entry| {
-                    if !broadcast_msg.delivered_to_apps.contains(entry.key()) {
-                        Some(entry.key().clone())
+                    let app_name = entry.key();
+                    if !delivered_to.contains(app_name.as_str()) {
+                        Some(app_name.clone())
                     } else {
                         None
                     }
                 })
                 .collect();
 
-            // Distribute to each app that needs it
-            for app_name in apps_needing_message {
-                // Clone message for this app
-                let mut app_msg = broadcast_msg.clone();
-                app_msg.delivered_to_apps.clear(); // Reset for the app's copy
-
-                // Get mutable reference to app queue
+            for app_name in apps_to_deliver {
                 if let Some(mut app_queue) = self.app_queues.get_mut(&app_name) {
-                    app_queue.ready_messages.push_back(app_msg);
-                    broadcast_msg.delivered_to_apps.insert(app_name);
-                    all_apps_received = false;
+                    app_queue.ready_messages.push_back(broadcast_msg.clone());
+                    delivered_to.insert(app_name);
                 }
             }
 
-            // If no apps are registered yet, keep the broadcast message
-            if self.app_queues.is_empty() {
-                all_apps_received = false;
-            }
-
-            if all_apps_received && !self.app_queues.is_empty() {
-                processed_broadcasts.push(broadcast_msg.id.clone());
+            // If all apps have received it, mark for removal
+            if !self.app_queues.is_empty() &&
+                self.app_queues.iter().all(|entry| delivered_to.contains(entry.key().as_str())) {
+                fully_delivered.push(idx);
             }
         }
 
-        // Remove fully distributed broadcasts
-        self.broadcast_queue.retain(|msg| !processed_broadcasts.contains(&msg.id));
+        // Remove fully distributed broadcasts (in reverse order)
+        for idx in fully_delivered.iter().rev() {
+            self.broadcast_messages.remove(*idx);
+        }
     }
 }
 
@@ -159,7 +160,7 @@ impl InMemoryStorage {
 
     fn start_cleanup_task(&mut self) {
         let queues = self.queues.clone();
-        let cleanup_interval = Duration::from_secs(5);
+        let cleanup_interval = Duration::from_secs(1);
 
         let handle = tokio::spawn(async move {
             let mut interval = interval(cleanup_interval);
@@ -205,7 +206,7 @@ impl MesgInnerStorage for InMemoryStorage {
         let queue_state = self.get_or_create_queue(queue).await;
         let mut queue_guard = queue_state.write().await;
 
-        let message_id = Uuid::new_v4().to_string(); // Use just UUID
+        let message_id = Uuid::new_v4().to_string();
 
         let message = QueueMessage {
             id: message_id,
@@ -215,16 +216,15 @@ impl MesgInnerStorage for InMemoryStorage {
                 .unwrap()
                 .as_millis() as u64,
             delivery_count: 0,
-            delivered_to_apps: HashSet::new(),
         };
 
         if is_broadcast {
-            // Add to broadcast queue - will be distributed to all apps
-            queue_guard.broadcast_queue.push_back(message);
+            // Add to broadcast queue with empty delivery tracking
+            queue_guard.broadcast_messages.push_back((message, HashSet::new()));
             // Immediately distribute to existing apps
             queue_guard.distribute_broadcast_messages();
         } else {
-            // Add to shared queue - will be consumed by one app
+            // Add to shared queue - will be consumed by first available app
             queue_guard.shared_queue.push_back(message);
         }
 
@@ -245,39 +245,37 @@ impl MesgInnerStorage for InMemoryStorage {
             .unwrap()
             .as_millis() as u64;
 
-        // Ensure app queue exists
-        let mut app_queue = queue_guard.get_or_create_app_queue(application);
+        // Ensure app queue exists (this will also deliver pending broadcasts)
+        let app_queue = queue_guard.get_or_create_app_queue(application);
+        drop(app_queue); // Release the RefMut immediately
 
-        // Check for expired messages first
-        app_queue.check_expired_messages(now);
+        // Get mutable reference to app queue
+        if let Some(mut app_queue) = queue_guard.app_queues.get_mut(application) {
+            // Check for expired messages first
+            app_queue.check_expired_messages(now);
 
-        // Try to get from app-specific queue first
-        if let Some(mut message) = app_queue.ready_messages.pop_front() {
-            let visibility_timeout = now + invisibility_timeout_ms as u64;
-            message.delivery_count += 1;
+            // Try to get from app-specific queue first (broadcast messages)
+            if let Some(mut message) = app_queue.ready_messages.pop_front() {
+                let visibility_timeout = now + invisibility_timeout_ms as u64;
+                message.delivery_count += 1;
 
-            let msg_id = message.id.clone();
-            let data = message.data.clone();
+                let msg_id = message.id.clone();
+                let data = message.data.clone();
 
-            app_queue.unacked_messages.insert(
-                msg_id.clone(),
-                (message, visibility_timeout)
-            );
+                app_queue.unacked_messages.insert(
+                    msg_id.clone(),
+                    (message, visibility_timeout)
+                );
 
-            return Ok(Some(Message {
-                id: msg_id,
-                data,
-                delivered: true,
-            }));
+                return Ok(Some(Message {
+                    id: msg_id,
+                    data,
+                    delivered: true,
+                }));
+            }
         }
 
-        // Drop the app_queue RefMut before trying to modify queue_guard
-        drop(app_queue);
-
-        // Distribute any pending broadcast messages
-        queue_guard.distribute_broadcast_messages();
-
-        // Try to get from shared queue
+        // Try to get from shared queue (non-broadcast messages, load-balanced across all apps)
         if let Some(mut message) = queue_guard.shared_queue.pop_front() {
             let visibility_timeout = now + invisibility_timeout_ms as u64;
             message.delivery_count += 1;
@@ -285,39 +283,19 @@ impl MesgInnerStorage for InMemoryStorage {
             let msg_id = message.id.clone();
             let data = message.data.clone();
 
-            // Re-acquire the app queue
-            let mut app_queue = queue_guard.get_or_create_app_queue(application);
-            app_queue.unacked_messages.insert(
-                msg_id.clone(),
-                (message, visibility_timeout)
-            );
+            // Get the app queue again
+            if let Some(app_queue) = queue_guard.app_queues.get(application) {
+                app_queue.unacked_messages.insert(
+                    msg_id.clone(),
+                    (message, visibility_timeout)
+                );
 
-            return Ok(Some(Message {
-                id: msg_id,
-                data,
-                delivered: true,
-            }));
-        }
-
-        // Check if any broadcast messages are now available after distribution
-        let mut app_queue = queue_guard.get_or_create_app_queue(application);
-        if let Some(mut message) = app_queue.ready_messages.pop_front() {
-            let visibility_timeout = now + invisibility_timeout_ms as u64;
-            message.delivery_count += 1;
-
-            let msg_id = message.id.clone();
-            let data = message.data.clone();
-
-            app_queue.unacked_messages.insert(
-                msg_id.clone(),
-                (message, visibility_timeout)
-            );
-
-            return Ok(Some(Message {
-                id: msg_id,
-                data,
-                delivered: true,
-            }));
+                return Ok(Some(Message {
+                    id: msg_id,
+                    data,
+                    delivered: true,
+                }));
+            }
         }
 
         Ok(None)
@@ -335,17 +313,9 @@ impl MesgInnerStorage for InMemoryStorage {
         let message_id = id.to_string();
 
         if let Some(app_queue) = queue_guard.app_queues.get(application) {
-            // Check if the message exists in unacked messages
             if app_queue.unacked_messages.contains_key(&message_id) {
-                // Remove it (this commits the message)
-                drop(app_queue); // Release the read lock on app_queue
-
-                // Re-acquire with write access for the specific app queue
-                let queue_guard = queue_state.read().await;
-                if let Some(app_queue) = queue_guard.app_queues.get(application) {
-                    app_queue.unacked_messages.remove(&message_id);
-                    return Ok(true);
-                };
+                app_queue.unacked_messages.remove(&message_id);
+                return Ok(true);
             }
         }
 
@@ -365,8 +335,8 @@ impl MesgInnerStorage for InMemoryStorage {
 
         if let Some(mut app_queue) = queue_guard.app_queues.get_mut(application) {
             if let Some((_, (message, _))) = app_queue.unacked_messages.remove(&message_id) {
-                // Put at back to maintain fairness (not front)
-                app_queue.ready_messages.push_back(message);
+                // Put at front for immediate redelivery
+                app_queue.ready_messages.push_front(message);
                 return Ok(true);
             }
         }

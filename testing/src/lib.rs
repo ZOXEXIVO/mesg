@@ -225,23 +225,43 @@ mod tests {
         let mut stream1 = start_pull(&mut client1, queue, app, 5000).await;
         let mut stream2 = start_pull(&mut client2, queue, app, 5000).await;
 
-        let mut received_ids = Vec::new();
+        // Collect messages concurrently from both consumers
+        let handle1 = tokio::spawn(async move {
+            let mut ids = Vec::new();
+            let mut client = create_client().await;
+            for _ in 0..5 {
+                if let Ok(Some(msg)) = stream1.message().await {
+                    ids.push(msg.id.clone());
+                    commit_message(&mut client, &msg.id, queue, app).await;
+                }
+            }
+            ids
+        });
 
-        // Each consumer should get different messages
-        for _ in 0..5 {
-            let msg1 = stream1.message().await.unwrap().unwrap();
-            received_ids.push(msg1.id.clone());
-            commit_message(&mut client1, &msg1.id, queue, app).await;
+        let handle2 = tokio::spawn(async move {
+            let mut ids = Vec::new();
+            let mut client = create_client().await;
+            for _ in 0..5 {
+                if let Ok(Some(msg)) = stream2.message().await {
+                    ids.push(msg.id.clone());
+                    commit_message(&mut client, &msg.id, queue, app).await;
+                }
+            }
+            ids
+        });
 
-            let msg2 = stream2.message().await.unwrap().unwrap();
-            received_ids.push(msg2.id.clone());
-            commit_message(&mut client2, &msg2.id, queue, app).await;
-        }
+        let ids1 = handle1.await.unwrap();
+        let ids2 = handle2.await.unwrap();
+
+        let mut all_ids = ids1;
+        all_ids.extend(ids2);
 
         // All IDs should be unique
-        received_ids.sort();
-        received_ids.dedup();
-        assert_eq!(10, received_ids.len(), "Each message should be delivered only once");
+        all_ids.sort();
+        let original_len = all_ids.len();
+        all_ids.dedup();
+        assert_eq!(original_len, all_ids.len(), "Each message should be delivered only once");
+        assert_eq!(10, all_ids.len(), "All messages should be received");
     }
 
     #[tokio::test]
