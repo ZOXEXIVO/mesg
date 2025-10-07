@@ -10,6 +10,7 @@ service MesgProtocol {
   rpc Push (PushRequest) returns (PushResponse) {}
   rpc Pull (PullRequest) returns (stream PullResponse) {}
   rpc Commit (CommitRequest) returns (CommitResponse) {}
+  rpc Rollback (RollbackRequest) returns (RollbackResponse) {}
 }
 ```
 
@@ -35,7 +36,7 @@ while (await stream.MoveNext(CancellationToken.None))
         await client.Commit(queueName, stream.Current.MessageId);
     }
     catch(Exception ex){
-
+        await client.Rollback(queueName, stream.Current.MessageId);
     }    
  }
 ```
@@ -43,7 +44,7 @@ while (await stream.MoveNext(CancellationToken.None))
 ### TODO
 
 - [x]  Broadcast push
-- [x]  Persistence
+- [ ]  Persistence
 - [ ]  Sharding and replication
 
 ### License
