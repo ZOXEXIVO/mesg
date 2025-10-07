@@ -35,7 +35,8 @@ while (await stream.MoveNext(CancellationToken.None))
 
         await client.Commit(queueName, stream.Current.MessageId);
     }
-    catch(Exception ex){
+    finally
+    {
         await client.Rollback(queueName, stream.Current.MessageId);
     }    
  }
