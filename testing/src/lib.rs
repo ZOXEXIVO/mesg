@@ -134,8 +134,7 @@ mod tests {
                         .commit(tonic::Request::new(CommitRequest {
                             id: item.id,
                             queue: String::clone(&queue),
-                            application: application.clone(),
-                            success: true,
+                            application: application.clone()
                         }))
                         .await
                         .unwrap();
