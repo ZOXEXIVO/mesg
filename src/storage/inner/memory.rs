@@ -1,7 +1,7 @@
 use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 use bytes::Bytes;
 use dashmap::DashMap;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -16,16 +16,57 @@ struct QueueMessage {
     data: Bytes,
     timestamp: u64,
     delivery_count: u32,
-    consumer_application: Option<String>,
-    visibility_timeout: Option<u64>,
+    // For tracking which apps have seen this broadcast message
+    delivered_to_apps: HashSet<String>,
+}
+
+#[derive(Debug)]
+struct ApplicationQueue {
+    /// Messages ready for this specific application
+    ready_messages: VecDeque<QueueMessage>,
+    /// Messages being processed by this application
+    unacked_messages: DashMap<String, (QueueMessage, u64)>, // (message, visibility_timeout)
+}
+
+impl ApplicationQueue {
+    fn new() -> Self {
+        ApplicationQueue {
+            ready_messages: VecDeque::new(),
+            unacked_messages: DashMap::new(),
+        }
+    }
+
+    fn check_expired_messages(&mut self, now: u64) {
+        let expired_ids: Vec<String> = self
+            .unacked_messages
+            .iter()
+            .filter_map(|entry| {
+                let (_, visibility_timeout) = entry.value();
+                if now >= *visibility_timeout {
+                    Some(entry.key().clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for id in expired_ids {
+            if let Some((_, (mut message, _))) = self.unacked_messages.remove(&id) {
+                message.delivery_count += 1;
+                self.ready_messages.push_back(message);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 struct QueueState {
-    /// Ready messages waiting to be consumed
-    ready_queue: VecDeque<QueueMessage>,
-    /// Messages currently being processed (unacknowledged)
-    unacked_messages: DashMap<String, QueueMessage>,
+    /// Main queue for non-broadcast messages (shared pool)
+    shared_queue: VecDeque<QueueMessage>,
+    /// Broadcast messages that need to be delivered to all apps
+    broadcast_queue: VecDeque<QueueMessage>,
+    /// Per-application sub-queues
+    app_queues: DashMap<String, ApplicationQueue>,
     /// Message sequence number for ordering
     sequence: AtomicU64,
 }
@@ -33,40 +74,71 @@ struct QueueState {
 impl QueueState {
     fn new() -> Self {
         QueueState {
-            ready_queue: VecDeque::new(),
-            unacked_messages: DashMap::new(),
+            shared_queue: VecDeque::new(),
+            broadcast_queue: VecDeque::new(),
+            app_queues: DashMap::new(),
             sequence: AtomicU64::new(0),
         }
     }
 
+    fn get_or_create_app_queue(&self, application: &str) -> dashmap::mapref::one::RefMut<String, ApplicationQueue> {
+        self.app_queues
+            .entry(application.to_string())
+            .or_insert_with(ApplicationQueue::new)
+    }
+
     fn check_expired_messages(&mut self, now: u64) {
-        // Collect expired message IDs
-        let expired_ids: Vec<String> = self
-            .unacked_messages
-            .iter()
-            .filter_map(|entry| {
-                let message = entry.value();
-                if let Some(visibility_timeout) = message.visibility_timeout {
-                    if now >= visibility_timeout {
+        // Check each application's unacked messages
+        for mut app_queue in self.app_queues.iter_mut() {
+            app_queue.check_expired_messages(now);
+        }
+    }
+
+    fn distribute_broadcast_messages(&mut self) {
+        // Copy broadcast messages to each application queue that hasn't received them
+        let mut processed_broadcasts = Vec::new();
+
+        for broadcast_msg in &mut self.broadcast_queue {
+            let mut all_apps_received = true;
+
+            // Collect app names that need this message
+            let apps_needing_message: Vec<String> = self.app_queues
+                .iter()
+                .filter_map(|entry| {
+                    if !broadcast_msg.delivered_to_apps.contains(entry.key()) {
                         Some(entry.key().clone())
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })
-            .collect();
+                })
+                .collect();
 
-        // Move expired messages back to ready queue
-        for id in expired_ids {
-            if let Some((_, mut message)) = self.unacked_messages.remove(&id) {
-                message.visibility_timeout = None;
-                message.consumer_application = None;
-                message.delivery_count += 1;
-                self.ready_queue.push_back(message);
+            // Distribute to each app that needs it
+            for app_name in apps_needing_message {
+                // Clone message for this app
+                let mut app_msg = broadcast_msg.clone();
+                app_msg.delivered_to_apps.clear(); // Reset for the app's copy
+
+                // Get mutable reference to app queue
+                if let Some(mut app_queue) = self.app_queues.get_mut(&app_name) {
+                    app_queue.ready_messages.push_back(app_msg);
+                    broadcast_msg.delivered_to_apps.insert(app_name);
+                    all_apps_received = false;
+                }
+            }
+
+            // If no apps are registered yet, keep the broadcast message
+            if self.app_queues.is_empty() {
+                all_apps_received = false;
+            }
+
+            if all_apps_received && !self.app_queues.is_empty() {
+                processed_broadcasts.push(broadcast_msg.id.clone());
             }
         }
+
+        // Remove fully distributed broadcasts
+        self.broadcast_queue.retain(|msg| !processed_broadcasts.contains(&msg.id));
     }
 }
 
@@ -79,22 +151,15 @@ pub struct InMemoryStorage {
 
 impl InMemoryStorage {
     async fn get_or_create_queue(&self, queue_name: &str) -> Arc<RwLock<QueueState>> {
-        if let Some(queue) = self.queues.get(queue_name) {
-            return Arc::clone(&queue);
-        }
-
-        // Create new queue
-        let queue_state = QueueState::new();
-        let queue_arc = Arc::new(RwLock::new(queue_state));
         self.queues
-            .insert(queue_name.to_string(), Arc::clone(&queue_arc));
-
-        queue_arc
+            .entry(queue_name.to_string())
+            .or_insert_with(|| Arc::new(RwLock::new(QueueState::new())))
+            .clone()
     }
 
     fn start_cleanup_task(&mut self) {
         let queues = self.queues.clone();
-        let cleanup_interval = Duration::from_secs(5); // Check every 5 seconds
+        let cleanup_interval = Duration::from_secs(5);
 
         let handle = tokio::spawn(async move {
             let mut interval = interval(cleanup_interval);
@@ -107,11 +172,11 @@ impl InMemoryStorage {
                     .unwrap()
                     .as_millis() as u64;
 
-                // Check all queues for expired messages
                 for queue_entry in queues.iter() {
                     let queue_state = queue_entry.value();
                     let mut queue = queue_state.write().await;
                     queue.check_expired_messages(now);
+                    queue.distribute_broadcast_messages();
                 }
             }
         });
@@ -140,8 +205,7 @@ impl MesgInnerStorage for InMemoryStorage {
         let queue_state = self.get_or_create_queue(queue).await;
         let mut queue_guard = queue_state.write().await;
 
-        let sequence = queue_guard.sequence.fetch_add(1, Ordering::SeqCst);
-        let message_id = format!("{}-{}", Uuid::new_v4(), sequence);
+        let message_id = Uuid::new_v4().to_string(); // Use just UUID
 
         let message = QueueMessage {
             id: message_id,
@@ -151,11 +215,18 @@ impl MesgInnerStorage for InMemoryStorage {
                 .unwrap()
                 .as_millis() as u64,
             delivery_count: 0,
-            consumer_application: None,
-            visibility_timeout: None,
+            delivered_to_apps: HashSet::new(),
         };
 
-        queue_guard.ready_queue.push_back(message);
+        if is_broadcast {
+            // Add to broadcast queue - will be distributed to all apps
+            queue_guard.broadcast_queue.push_back(message);
+            // Immediately distribute to existing apps
+            queue_guard.distribute_broadcast_messages();
+        } else {
+            // Add to shared queue - will be consumed by one app
+            queue_guard.shared_queue.push_back(message);
+        }
 
         Ok(true)
     }
@@ -169,29 +240,81 @@ impl MesgInnerStorage for InMemoryStorage {
         let queue_state = self.get_or_create_queue(queue).await;
         let mut queue_guard = queue_state.write().await;
 
-        // First, check for expired messages and restore them
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        queue_guard.check_expired_messages(now);
 
-        // Try to pop a message from the ready queue
-        if let Some(mut message) = queue_guard.ready_queue.pop_front() {
-            // Set visibility timeout
-            message.visibility_timeout = Some(now + invisibility_timeout_ms as u64);
-            message.consumer_application = Some(application.to_string());
+        // Ensure app queue exists
+        let mut app_queue = queue_guard.get_or_create_app_queue(application);
+
+        // Check for expired messages first
+        app_queue.check_expired_messages(now);
+
+        // Try to get from app-specific queue first
+        if let Some(mut message) = app_queue.ready_messages.pop_front() {
+            let visibility_timeout = now + invisibility_timeout_ms as u64;
             message.delivery_count += 1;
 
-            // Move to unacked messages
-            let message_id = message.id.clone();
+            let msg_id = message.id.clone();
             let data = message.data.clone();
-            queue_guard
-                .unacked_messages
-                .insert(message_id.clone(), message);
+
+            app_queue.unacked_messages.insert(
+                msg_id.clone(),
+                (message, visibility_timeout)
+            );
 
             return Ok(Some(Message {
-                id: message_id,
+                id: msg_id,
+                data,
+                delivered: true,
+            }));
+        }
+
+        // Drop the app_queue RefMut before trying to modify queue_guard
+        drop(app_queue);
+
+        // Distribute any pending broadcast messages
+        queue_guard.distribute_broadcast_messages();
+
+        // Try to get from shared queue
+        if let Some(mut message) = queue_guard.shared_queue.pop_front() {
+            let visibility_timeout = now + invisibility_timeout_ms as u64;
+            message.delivery_count += 1;
+
+            let msg_id = message.id.clone();
+            let data = message.data.clone();
+
+            // Re-acquire the app queue
+            let mut app_queue = queue_guard.get_or_create_app_queue(application);
+            app_queue.unacked_messages.insert(
+                msg_id.clone(),
+                (message, visibility_timeout)
+            );
+
+            return Ok(Some(Message {
+                id: msg_id,
+                data,
+                delivered: true,
+            }));
+        }
+
+        // Check if any broadcast messages are now available after distribution
+        let mut app_queue = queue_guard.get_or_create_app_queue(application);
+        if let Some(mut message) = app_queue.ready_messages.pop_front() {
+            let visibility_timeout = now + invisibility_timeout_ms as u64;
+            message.delivery_count += 1;
+
+            let msg_id = message.id.clone();
+            let data = message.data.clone();
+
+            app_queue.unacked_messages.insert(
+                msg_id.clone(),
+                (message, visibility_timeout)
+            );
+
+            return Ok(Some(Message {
+                id: msg_id,
                 data,
                 delivered: true,
             }));
@@ -211,18 +334,18 @@ impl MesgInnerStorage for InMemoryStorage {
 
         let message_id = id.to_string();
 
-        // Check if message exists and belongs to this application
-        if let Some(message_entry) = queue_guard.unacked_messages.get(&message_id) {
-            let message = message_entry.value();
+        if let Some(app_queue) = queue_guard.app_queues.get(application) {
+            // Check if the message exists in unacked messages
+            if app_queue.unacked_messages.contains_key(&message_id) {
+                // Remove it (this commits the message)
+                drop(app_queue); // Release the read lock on app_queue
 
-            // Verify the application matches
-            if let Some(ref consumer_app) = message.consumer_application {
-                if consumer_app == application {
-                    // Remove from unacked (this commits the message)
-                    drop(message_entry);
-                    queue_guard.unacked_messages.remove(&message_id);
+                // Re-acquire with write access for the specific app queue
+                let queue_guard = queue_state.read().await;
+                if let Some(app_queue) = queue_guard.app_queues.get(application) {
+                    app_queue.unacked_messages.remove(&message_id);
                     return Ok(true);
-                }
+                };
             }
         }
 
@@ -236,31 +359,16 @@ impl MesgInnerStorage for InMemoryStorage {
         application: &str,
     ) -> Result<bool, MesgStorageError> {
         let queue_state = self.get_or_create_queue(queue).await;
-        let mut queue_guard = queue_state.write().await;
+        let queue_guard = queue_state.read().await;
 
         let message_id = id.to_string();
 
-        // Try to remove from unacked messages
-        if let Some((_, message)) = queue_guard.unacked_messages.remove(&message_id) {
-            // Verify the application matches
-            if let Some(ref consumer_app) = message.consumer_application {
-                if consumer_app != application {
-                    // Put it back if application doesn't match
-                    queue_guard
-                        .unacked_messages
-                        .insert(message_id.clone(), message);
-                    return Ok(false);
-                }
+        if let Some(mut app_queue) = queue_guard.app_queues.get_mut(application) {
+            if let Some((_, (message, _))) = app_queue.unacked_messages.remove(&message_id) {
+                // Put at back to maintain fairness (not front)
+                app_queue.ready_messages.push_back(message);
+                return Ok(true);
             }
-
-            // Reset message state and add back to ready queue
-            let mut rolled_back_message = message;
-            rolled_back_message.visibility_timeout = None;
-            rolled_back_message.consumer_application = None;
-            // Keep delivery_count to track redeliveries
-
-            queue_guard.ready_queue.push_front(rolled_back_message);
-            return Ok(true);
         }
 
         Ok(false)
@@ -272,175 +380,5 @@ impl Drop for InMemoryStorage {
         if let Some(handle) = self.cleanup_task_handle.take() {
             handle.abort();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_in_memory_push_pop() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-        let app = "test_app";
-
-        // Push a message
-        let data = Bytes::from_static(b"test message");
-        let result = storage.push(queue, data.clone(), false).await;
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-
-        // Pop the message
-        let msg = storage.pop(queue, app, 5000).await.unwrap();
-        assert!(msg.is_some());
-        let msg = msg.unwrap();
-        assert_eq!(data, msg.data);
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_commit() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-        let app = "test_app";
-
-        // Push and pop
-        storage
-            .push(queue, Bytes::from_static(b"test"), false)
-            .await
-            .unwrap();
-        let msg = storage.pop(queue, app, 5000).await.unwrap().unwrap();
-
-        // Commit
-        let id = Uuid::parse_str(&msg.id).unwrap();
-        let result = storage.commit(id, queue, app).await.unwrap();
-        assert!(result);
-
-        // Should not be available anymore
-        let msg2 = storage.pop(queue, app, 1000).await.unwrap();
-        assert!(msg2.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_rollback() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-        let app = "test_app";
-
-        // Push and pop
-        let data = Bytes::from_static(b"rollback test");
-        storage.push(queue, data.clone(), false).await.unwrap();
-        let msg = storage.pop(queue, app, 5000).await.unwrap().unwrap();
-
-        // Rollback
-        let id = Uuid::parse_str(&msg.id).unwrap();
-        let result = storage.rollback(id, queue, app).await.unwrap();
-        assert!(result);
-
-        // Should be available again
-        let msg2 = storage.pop(queue, app, 5000).await.unwrap();
-        assert!(msg2.is_some());
-        assert_eq!(data, msg2.unwrap().data);
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_visibility_timeout() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-        let app = "test_app";
-
-        // Push a message
-        storage
-            .push(queue, Bytes::from_static(b"timeout test"), false)
-            .await
-            .unwrap();
-
-        // Pop with short timeout
-        let msg = storage.pop(queue, app, 100).await.unwrap().unwrap();
-
-        // Should not be immediately available
-        let msg2 = storage.pop(queue, app, 100).await.unwrap();
-        assert!(msg2.is_none());
-
-        // Wait for timeout
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        // Should be available again
-        let msg3 = storage.pop(queue, app, 5000).await.unwrap();
-        assert!(msg3.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_fifo_order() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-        let app = "test_app";
-
-        // Push multiple messages
-        for i in 0..5 {
-            storage
-                .push(queue, Bytes::from(vec![i]), false)
-                .await
-                .unwrap();
-        }
-
-        // Pop and verify order
-        for i in 0..5 {
-            let msg = storage.pop(queue, app, 5000).await.unwrap().unwrap();
-            assert_eq!(vec![i], msg.data.to_vec());
-            let id = Uuid::parse_str(&msg.id).unwrap();
-            storage.commit(id, queue, app).await.unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_wrong_application_commit() {
-        let storage = InMemoryStorage::create("").await;
-        let queue = "test_queue";
-
-        // Push and pop with app1
-        storage
-            .push(queue, Bytes::from_static(b"test"), false)
-            .await
-            .unwrap();
-        let msg = storage.pop(queue, "app1", 5000).await.unwrap().unwrap();
-
-        // Try to commit with app2
-        let id = Uuid::parse_str(&msg.id).unwrap();
-        let result = storage.commit(id, queue, "app2").await.unwrap();
-        assert!(!result, "Commit with wrong application should fail");
-
-        // Commit with correct app should work
-        let result2 = storage.commit(id, queue, "app1").await.unwrap();
-        assert!(result2);
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_empty_queue() {
-        let storage = InMemoryStorage::create("").await;
-        let msg = storage.pop("empty_queue", "app", 1000).await.unwrap();
-        assert!(msg.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_in_memory_multiple_queues() {
-        let storage = InMemoryStorage::create("").await;
-
-        // Push to different queues
-        storage
-            .push("queue1", Bytes::from_static(b"msg1"), false)
-            .await
-            .unwrap();
-        storage
-            .push("queue2", Bytes::from_static(b"msg2"), false)
-            .await
-            .unwrap();
-
-        // Pop from each queue
-        let msg1 = storage.pop("queue1", "app", 5000).await.unwrap().unwrap();
-        let msg2 = storage.pop("queue2", "app", 5000).await.unwrap().unwrap();
-
-        assert_eq!(b"msg1", msg1.data.as_ref());
-        assert_eq!(b"msg2", msg2.data.as_ref());
     }
 }

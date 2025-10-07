@@ -9,6 +9,7 @@ mod tests {
     use std::env;
     use tokio::time::{sleep, timeout, Duration};
     use tokio_stream::StreamExt;
+    use uuid::Uuid;
 
     const DEFAULT_MESG_URL: &'static str = "http://0.0.0.0:35000";
 
@@ -333,9 +334,11 @@ mod tests {
         let queue = "test_commit_nonexistent";
         let mut client = create_client().await;
 
+        let nonexistent_message_id = Uuid::new_v4().to_string();
+
         let result = client
             .commit(tonic::Request::new(CommitRequest {
-                id: "nonexistent-id-12345".to_string(),
+                id: nonexistent_message_id,
                 queue: queue.to_string(),
                 application: "app_test".to_string(),
             }))
@@ -351,9 +354,11 @@ mod tests {
         let queue = "test_rollback_nonexistent";
         let mut client = create_client().await;
 
+        let nonexistent_message_id = Uuid::new_v4().to_string();
+
         let result = client
             .rollback(tonic::Request::new(RollbackRequest {
-                id: "nonexistent-id-67890".to_string(),
+                id: nonexistent_message_id,
                 queue: queue.to_string(),
                 application: "app_test".to_string(),
             }))
