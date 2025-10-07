@@ -44,8 +44,12 @@ impl MesgController {
             .unwrap()
     }
 
-    pub async fn commit(&self, id: Uuid, queue: &str, application: &str, success: bool) -> bool {
-        self.storage.commit(id, queue, application, success).await.unwrap()
+    pub async fn commit(&self, id: Uuid, queue: &str, application: &str) -> bool {
+        self.storage.commit(id, queue, application).await.unwrap()
+    }
+
+    pub async fn rollback(&self, id: Uuid, queue: &str, application: &str) -> bool {
+        self.storage.rollback(id, queue, application).await.unwrap()
     }
 
     pub fn start_jobs(&self) {

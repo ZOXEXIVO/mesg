@@ -366,59 +366,56 @@ impl MesgInnerStorage for RawFileStorage {
         &self,
         id: Uuid,
         queue: &str,
-        application: &str,
-        success: bool,
+        application: &str
     ) -> Result<bool, MesgStorageError> {
         let queue_state = self.get_or_create_queue(queue).await?;
         let mut queue = queue_state.write().await;
 
         let message_id = id.to_string();
-
-        if success {
-            // Acknowledge the message - remove from unacked
-            if queue.unacked_messages.remove(&message_id).is_some() {
-                // Log the acknowledgment
-                let ack_message = QueueMessage {
-                    id: format!("ACK-{}", message_id),
-                    data: vec![], // Empty data for ACK record
-                    timestamp: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64,
-                    delivery_count: 0,
-                    consumer_application: Some(application.to_string()),
-                    visibility_timeout: None,
-                };
-                queue.append_to_log(&ack_message).await?;
-                Ok(true)
-            } else {
-                Ok(false) // Message not found in unacked
-            }
+        
+        // Acknowledge the message - remove from unacked
+        if queue.unacked_messages.remove(&message_id).is_some() {
+            // Log the acknowledgment
+            let ack_message = QueueMessage {
+                id: format!("ACK-{}", message_id),
+                data: vec![], // Empty data for ACK record
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+                delivery_count: 0,
+                consumer_application: Some(application.to_string()),
+                visibility_timeout: None,
+            };
+            queue.append_to_log(&ack_message).await?;
+            Ok(true)
         } else {
-            // Negative acknowledgment - move back to ready queue
-            if let Some((_, mut message)) = queue.unacked_messages.remove(&message_id) {
-                message.visibility_timeout = None;
-                message.consumer_application = None;
-
-                // Log the negative acknowledgment
-                queue.append_to_log(&message).await?;
-
-                queue.ready_queue.push_back(message);
-                Ok(true)
-            } else {
-                Ok(false) // Message not found in unacked
-            }
+            Ok(false) // Message not found in unacked
         }
     }
 
-    async fn revert(
+    async fn rollback(
         &self,
         id: Uuid,
         queue: &str,
         application: &str,
     ) -> Result<bool, MesgStorageError> {
-        // Revert is similar to negative acknowledgment
-        self.commit(id, queue, application, false).await
+        let queue_state = self.get_or_create_queue(queue).await?;
+        let mut queue = queue_state.write().await;
+
+        let message_id = id.to_string();
+        if let Some((_, mut message)) = queue.unacked_messages.remove(&message_id) {
+            message.visibility_timeout = None;
+            message.consumer_application = None;
+
+            // Log the negative acknowledgment
+            queue.append_to_log(&message).await?;
+
+            queue.ready_queue.push_back(message);
+            Ok(true)
+        } else {
+            Ok(false) // Message not found in unacked
+        }
     }
 }
 

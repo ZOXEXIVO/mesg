@@ -48,7 +48,7 @@ impl ConsumerBackgroundJob for EventsWatcher {
                             );
 
                             let revert_result = storage
-                                .revert(Uuid::from_str(&id).unwrap(), &config.queue, &config.application)
+                                .rollback(Uuid::from_str(&id).unwrap(), &config.queue, &config.application)
                                 .await;
 
                             if revert_result.is_err()

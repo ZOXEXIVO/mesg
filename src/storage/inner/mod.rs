@@ -26,11 +26,10 @@ pub trait MesgInnerStorage {
         &self,
         id: Uuid,
         queue: &str,
-        application: &str,
-        success: bool,
+        application: &str
     ) -> Result<bool, MesgStorageError>;
 
-    async fn revert(
+    async fn rollback(
         &self,
         id: Uuid,
         queue: &str,

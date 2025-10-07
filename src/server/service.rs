@@ -12,6 +12,7 @@ pub trait Mesg {
     async fn push(&self, request: PushRequestModel) -> PushResponseModel;
     async fn pull(&self, request: PullRequestModel) -> PullResponseModel;
     async fn commit(&self, request: CommitRequestModel) -> CommitResponseModel;
+    async fn rollback(&self, request: RollbackRequestModel) -> RollbackResponseModel;
 }
 
 pub struct MesgService {
@@ -68,8 +69,24 @@ impl Mesg for MesgService {
                 .commit(
                     uuid,
                     &request.queue,
-                    &request.application,
-                    request.success,
+                    &request.application
+                )
+                .await,
+        }
+    }
+
+    async fn rollback(&self, request: RollbackRequestModel) -> RollbackResponseModel {
+        StaticMetricsWriter::inc_rollback_metric(&request.queue);
+
+        let uuid = Uuid::from_str(&request.id).unwrap();
+
+        RollbackResponseModel {
+            success: self
+                .controller
+                .rollback(
+                    uuid,
+                    &request.queue,
+                    &request.application
                 )
                 .await,
         }
@@ -104,11 +121,21 @@ pub struct PullResponseModel {
 pub struct CommitRequestModel {
     pub id: String,
     pub queue: String,
-    pub application: String,
-
-    pub success: bool,
+    pub application: String
 }
 
 pub struct CommitResponseModel {
+    pub success: bool,
+}
+
+// Commit
+
+pub struct RollbackRequestModel {
+    pub id: String,
+    pub queue: String,
+    pub application: String
+}
+
+pub struct RollbackResponseModel {
     pub success: bool,
 }

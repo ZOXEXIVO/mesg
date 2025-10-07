@@ -87,8 +87,7 @@ where
             .commit(CommitRequestModel {
                 id: req.id,
                 queue: req.queue,
-                application: req.application,
-                success: req.success,
+                application: req.application
             })
             .await;
 

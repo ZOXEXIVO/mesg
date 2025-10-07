@@ -1,10 +1,10 @@
-﻿<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Default" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
     <option name="buildProfileId" value="dev" />
-    <option name="command" value="run" />
+    <option name="command" value="run --package mesg --bin mesg" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <envs />
-    <option name="emulateTerminal" value="false" />
+    <option name="emulateTerminal" value="true" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="true" />
     <option name="allFeatures" value="false" />

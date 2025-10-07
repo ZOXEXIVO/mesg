@@ -41,22 +41,21 @@ impl<S: MesgInnerStorage> Storage<S> {
         &self,
         id: Uuid,
         queue: &str,
-        application: &str,
-        success: bool,
+        application: &str
     ) -> Result<bool, MesgStorageError> {
         self.inner_storage
-            .commit(id, queue, application, success)
+            .commit(id, queue, application)
             .await
     }
 
-    pub async fn revert(
+    pub async fn rollback(
         &self,
         id: Uuid,
         queue: &str,
         application: &str,
     ) -> Result<bool, MesgStorageError> {
         self.inner_storage
-            .revert(id, queue, application)
+            .rollback(id, queue, application)
             .await
     }
 }

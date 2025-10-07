@@ -7,6 +7,7 @@ use std::sync::{Arc, LazyLock};
 static PUSH_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
 static CONSUMERS_COUNT_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
 static COMMIT_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
+static ROLLBACK_METRIC: LazyLock<CHashMap<String, Arc<AtomicU64>>> = LazyLock::new(CHashMap::new);
 
 #[derive(Clone)]
 pub struct StaticMetricsWriter;
@@ -50,6 +51,16 @@ impl StaticMetricsWriter {
         );
     }
 
+    pub fn inc_rollback_metric(queue: &str) {
+        ROLLBACK_METRIC.upsert(
+            queue.into(),
+            || Arc::new(AtomicU64::new(1)),
+            |val| {
+                val.fetch_add(1, Ordering::Relaxed);
+            },
+        );
+    }
+
     pub fn write(result: &mut String) {
         // mesg_push_ops
         writeln!(result, "# HELP mesg_push_ops Number of push operations").unwrap();
@@ -62,6 +73,13 @@ impl StaticMetricsWriter {
         writeln!(result, "# HELP mesg_commit_ops Number of commit operations").unwrap();
         writeln!(result, "# TYPE mesg_commit_ops histogram").unwrap();
         Self::write_map(result, "mesg_commit_ops", COMMIT_METRIC.clone());
+
+        writeln!(result).unwrap();
+
+        // mesg_rollback_ops
+        writeln!(result, "# HELP mesg_rollback_ops Number of commit operations").unwrap();
+        writeln!(result, "# TYPE mesg_rollback_ops histogram").unwrap();
+        Self::write_map(result, "mesg_rollback_ops", ROLLBACK_METRIC.clone());
 
         writeln!(result).unwrap();
 
