@@ -1,10 +1,10 @@
-use crate::storage::raw::RawFileStorage;
 use crate::storage::{MesgInnerStorage, MesgStorageError, Message};
 use bytes::Bytes;
 use std::path::Path;
 use uuid::Uuid;
+use crate::storage::memory::InMemoryStorage;
 
-pub type MesgStorage = Storage<RawFileStorage>;
+pub type MesgStorage = Storage<InMemoryStorage>;
 
 pub struct Storage<S: MesgInnerStorage> {
     inner_storage: S,
