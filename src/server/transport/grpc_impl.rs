@@ -2,7 +2,7 @@ use std::future::Future;
 use tonic::Request;
 
 use crate::consumer::RawConsumer;
-use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel};
+use crate::server::service::{CommitRequestModel, Mesg, PullRequestModel, PushRequestModel, RollbackRequestModel};
 use crate::server::transport::grpc::mesg_protocol_server::MesgProtocol;
 use crate::server::transport::grpc::{
     CommitRequest, CommitResponse, PullRequest, PushRequest, PushResponse,
@@ -12,6 +12,7 @@ use bytes::Bytes;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::codegen::tokio_stream::Stream;
+use crate::server::transport::{RollbackRequest, RollbackResponse};
 
 pub struct MesgGrpcImplService<T: Mesg>
 where
@@ -20,9 +21,10 @@ where
     inner: T,
 }
 
-impl<'g, T: Mesg> MesgGrpcImplService<T>
+impl<T> MesgGrpcImplService<T>
 where
     T: Send + Sync + 'static,
+    T: Mesg
 {
     pub fn new(inner: T) -> Self {
         Self { inner }
@@ -93,6 +95,26 @@ where
 
         Ok(tonic::Response::new(CommitResponse {
             success: commit_response.success,
+        }))
+    }
+
+    async fn rollback(
+        &self,
+        request: Request<RollbackRequest>,
+    ) -> Result<tonic::Response<RollbackResponse>, tonic::Status> {
+        let req = request.into_inner();
+
+        let rollback_response = self
+            .inner
+            .rollback(RollbackRequestModel {
+                id: req.id,
+                queue: req.queue,
+                application: req.application
+            })
+            .await;
+
+        Ok(tonic::Response::new(RollbackResponse {
+            success: rollback_response.success,
         }))
     }
 }

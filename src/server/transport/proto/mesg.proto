@@ -6,6 +6,7 @@ service MesgProtocol {
   rpc Push (PushRequest) returns (PushResponse) {}
   rpc Pull (PullRequest) returns (stream PullResponse) {}
   rpc Commit (CommitRequest) returns (CommitResponse) {}
+  rpc Rollback (RollbackRequest) returns (RollbackResponse) {}
 }
 
 // Push
@@ -37,10 +38,20 @@ message CommitRequest {
   string id = 1;
   string queue = 2;
   string application = 3;
-
-  bool success = 4;
 }
 
 message CommitResponse {
+  bool success = 1;
+}
+
+// Commit
+
+message RollbackRequest {
+  string id = 1;
+  string queue = 2;
+  string application = 3;
+}
+
+message RollbackResponse {
   bool success = 1;
 }
