@@ -22,6 +22,8 @@ impl Consumer {
 
         let mut jobs = ConsumerJobsCollection::new(Arc::clone(&storage), config, data_tx);
 
+
+
         jobs.start();
 
         Consumer { id, jobs }

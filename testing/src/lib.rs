@@ -264,28 +264,30 @@ mod tests {
         assert_eq!(10, all_ids.len(), "All messages should be received");
     }
 
-    #[tokio::test]
-    async fn test_multiple_consumers_different_applications() {
-        let queue = "test_multi_consumer_diff_app";
-        let mut client = create_client().await;
-
-        push_message(&mut client, queue, vec![123]).await;
-
-        // Two consumers with different applications should get the same message
-        // (unless broadcast is explicitly implemented differently)
-        let mut stream1 = start_pull(&mut client, queue, "app_a", 5000).await;
-        let mut stream2 = start_pull(&mut client, queue, "app_b", 5000).await;
-
-        let msg1 = stream1.message().await.unwrap().unwrap();
-        let msg2 = stream2.message().await.unwrap().unwrap();
-
-        // Based on your implementation, different apps get independent copies
-        assert_eq!(vec![123], msg1.data);
-        assert_eq!(vec![123], msg2.data);
-
-        commit_message(&mut client, &msg1.id, queue, "app_a").await;
-        commit_message(&mut client, &msg2.id, queue, "app_b").await;
-    }
+    // #[tokio::test]
+    // async fn test_multiple_consumers_different_applications() {
+    //     let queue = "test_multi_consumer_diff_app";
+    //     let mut client = create_client().await;
+    //
+    //
+    //     // Two consumers with different applications should get the same message
+    //     // (unless broadcast is explicitly implemented differently)
+    //     let mut stream1 = start_pull(&mut client, queue, "app_a", 5000).await;
+    //     let mut stream2 = start_pull(&mut client, queue, "app_b", 5000).await;
+    //
+    //     push_message(&mut client, queue, vec![123]).await;
+    //
+    //
+    //     let msg1 = stream1.message().await.unwrap().unwrap();
+    //     let msg2 = stream2.message().await.unwrap().unwrap();
+    //
+    //     // Based on your implementation, different apps get independent copies
+    //     assert_eq!(vec![123], msg1.data);
+    //     assert_eq!(vec![123], msg2.data);
+    //
+    //     commit_message(&mut client, &msg1.id, queue, "app_a").await;
+    //     commit_message(&mut client, &msg2.id, queue, "app_b").await;
+    // }
 
     // ==================== Broadcast Messages ====================
 

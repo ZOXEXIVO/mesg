@@ -160,7 +160,7 @@ impl InMemoryStorage {
 
     fn start_cleanup_task(&mut self) {
         let queues = self.queues.clone();
-        let cleanup_interval = Duration::from_secs(1);
+        let cleanup_interval = Duration::from_millis(500);
 
         let handle = tokio::spawn(async move {
             let mut interval = interval(cleanup_interval);
@@ -224,7 +224,7 @@ impl MesgInnerStorage for InMemoryStorage {
             // Immediately distribute to existing apps
             queue_guard.distribute_broadcast_messages();
         } else {
-            // Add to shared queue - will be consumed by first available app
+            // Add to shared queue - will be consumed by first available app/consumer
             queue_guard.shared_queue.push_back(message);
         }
 
