@@ -8,10 +8,9 @@ mod tests {
     };
     use std::env;
     use tokio::time::{sleep, timeout, Duration};
-    use tokio_stream::StreamExt;
     use uuid::Uuid;
 
-    const DEFAULT_MESG_URL: &'static str = "http://0.0.0.0:35000";
+    const DEFAULT_MESG_URL: &str = "http://0.0.0.0:37000";
 
     // ==================== Basic Operations ====================
 

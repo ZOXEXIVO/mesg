@@ -22,9 +22,6 @@ color-eyre = "0.6.5"
 structopt = "0.3.26"
 dashmap = "6.1.0"
 uuid = { version = "1.18.1", features = ["v4"] }
-raft = "0.7.0"
-serde = { version = "1.0.228", features = ["derive"] }
-bincode = {  version = "2.0.1", features = ["serde"] }
 tonic-prost = "0.14.2"
 
 [build-dependencies]
